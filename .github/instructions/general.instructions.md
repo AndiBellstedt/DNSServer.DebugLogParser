@@ -64,7 +64,7 @@ description: 'General coding guidelines and best practices for the module'
 - In case there is a 'assets'-folder with a 'logo'-file (e.g., png, jpg, svg), the logo should be included at the top of the README file.
     - For example:
         ```markdown
-        ![Project Logo](../../assets/DNSServer.DebugLogParser_256x256.png) Project Title
+        ![Project Logo](../../assets/icon/DNSServer.DebugLogParser_256x256.png) Project Title
         ```
 - Next to project title, there has to be badges included
     - they should be as a table with two columns "Plattform" and "Information" with the following content:

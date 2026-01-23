@@ -117,7 +117,7 @@ PrivateData.PSData.Tags = @('DNSServer', 'DNS', 'DebugLog', 'Parser', 'LogParser
 ```powershell
 LicenseUri   = 'https://github.com/AndiBellstedt/DNSServer.DebugLogParser/blob/main/LICENSE'
 ProjectUri   = 'https://github.com/AndiBellstedt/DNSServer.DebugLogParser'
-IconUri      = 'https://github.com/AndiBellstedt/DNSServer.DebugLogParser/raw/main/assets/DNSServer.DebugLogParser_128x128.png'
+IconUri      = 'https://github.com/AndiBellstedt/DNSServer.DebugLogParser/raw/main/assets/icon/DNSServer.DebugLogParser_128x128.png'
 ReleaseNotes = 'https://github.com/AndiBellstedt/DNSServer.DebugLogParser/blob/main/DNSServer.DebugLogParser/changelog.md'
 ```
 

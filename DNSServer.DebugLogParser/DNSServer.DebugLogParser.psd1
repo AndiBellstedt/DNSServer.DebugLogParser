@@ -104,7 +104,7 @@
             ProjectUri   = 'https://github.com/AndiBellstedt/DNSServer.DebugLogParser'
 
             # A URL to an icon representing this module.
-            IconUri      = 'https://github.com/AndiBellstedt/DNSServer.DebugLogParser/raw/main/assets/DNSServer.DebugLogParser_128x128.png'
+            IconUri      = 'https://github.com/AndiBellstedt/DNSServer.DebugLogParser/raw/main/assets/icon/DNSServer.DebugLogParser_128x128.png'
 
             # ReleaseNotes of this module
             ReleaseNotes = 'https://github.com/AndiBellstedt/DNSServer.DebugLogParser/blob/main/DNSServer.DebugLogParser/changelog.md'
