@@ -10,123 +10,170 @@
     .PARAMETER Line
         The log line string to parse.
 
-    .PARAMETER IncludeRawLine
-        Include the original raw log line in the output.
-
     .EXAMPLE
-        PS C:\> ConvertFrom-DnsLogLine -Line "1/23/2026 10:15:30 AM 1234 PACKET UDP Rcv 192.168.1.100 1234 Q [0001 D NOERROR] A (7)example(3)com(0)"
-
+        PS C:\> ConvertFrom-DnsLogLine -Line "20.01.2026 23:00:18 0FE0 PACKET  000002C5307CFCD0 UDP Rcv 10.0.0.2        ede1   Q [0001   D   NOERROR] A      (4)ocsp(8)digicert(3)com(0)"
         Returns a hashtable with parsed log data.
 
     .NOTES
         Internal function not exported from module.
-        Version: 1.0.0
-        Author: Andi Bellstedt
-        Date: 2026-01-23
+
+        Version:    1.0.0
+        Author:     Andi Bellstedt
+        Date:       2026-01-23
 
     #>
     [CmdletBinding()]
     [OutputType([hashtable])]
     param(
-        [Parameter(Mandatory = $true)]
         [string]
-        $Line,
-
-        [Parameter(Mandatory = $false)]
-        [switch]
-        $IncludeRawLine
+        $Line
     )
 
-    # Skip empty lines or comment lines
-    if ([string]::IsNullOrWhiteSpace($Line) -or $Line.StartsWith('#')) {
+    # Skip empty lines
+    if ([string]::IsNullOrWhiteSpace($Line)) {
         return $null
     }
 
-    try {
-        # DNS debug log format (space-delimited):
-        # Date Time ThreadID Context PacketID Protocol Direction ClientIP Port QueryType Flags QueryName
-        # Example: 1/23/2026 10:15:30 AM 1234 PACKET 0001 UDP Rcv 192.168.1.100 1234 Q [0001 D NOERROR] A (7)example(3)com(0)
+    # Minimum line length check (date + time + minimal data)
+    if ($Line.Length -lt 25) {
+        return $null
+    }
 
-        $parts = $Line -split '\s+', 20
+    # Parse fixed-position fields for maximum performance
+    # Format: "13.01.2026 23:00:16 0FE0 PACKET  000002C53117D990 UDP Rcv 10.10.31.11     c049   Q [0001   D   NOERROR] A      (3)odc..."
 
-        if ($parts.Count -lt 10) {
+    # Field 1 & 2: Date and Time (positions 0-18, format: DD.MM.YYYY HH:MM:SS)
+    $dateStr = $Line.Substring(0, 10)    # DD.MM.YYYY
+    $timeStr = $Line.Substring(11, 8)    # HH:MM:SS
+
+    # Parse DateTime - German format DD.MM.YYYY
+    $dateTime = $null
+    $dateParts = $dateStr.Split('.')
+    if ($dateParts.Count -eq 3) {
+        try {
+            $dateTime = [datetime]::new(
+                [int]$dateParts[2],  # Year
+                [int]$dateParts[1],  # Month
+                [int]$dateParts[0],  # Day
+                [int]$timeStr.Substring(0, 2),   # Hour
+                [int]$timeStr.Substring(3, 2),   # Minute
+                [int]$timeStr.Substring(6, 2)    # Second
+            )
+        } catch {
             return $null
         }
-
-        # Extract timestamp
-        $dateStr = "$($parts[0]) $($parts[1])"
-        $timestamp = $null
-        try {
-            # Try German format first: DD.MM.YYYY HH:MM:SS
-            $timestamp = [datetime]::ParseExact($dateStr, 'dd.MM.yyyy HH:mm:ss', [System.Globalization.CultureInfo]::InvariantCulture)
-        } catch {
-            # If parse fails, try US format with AM/PM: M/d/yyyy h:mm:ss tt
-            try {
-                $dateStr = "$($parts[0]) $($parts[1]) $($parts[2])"
-                $timestamp = [datetime]::ParseExact($dateStr, 'M/d/yyyy h:mm:ss tt', [System.Globalization.CultureInfo]::InvariantCulture)
-            } catch {
-                # Last resort: try generic parse
-                try {
-                    $timestamp = [datetime]::Parse($dateStr)
-                } catch {
-                    return $null
-                }
-            }
-        }
-
-        # Parse remaining fields (adjust indices based on date format)
-        # German format has 2 date fields (date + time), US format has 3 (date + time + AM/PM)
-        $dateFieldCount = if ($parts[0] -match '^\d{2}\.\d{2}\.\d{4}$') { 2 } else { 3 }
-
-        $threadId = $parts[$dateFieldCount]
-        $context = $parts[$dateFieldCount + 1]
-        $packetId = $parts[$dateFieldCount + 2]
-        $protocol = $parts[$dateFieldCount + 3]
-        $direction = $parts[$dateFieldCount + 4]
-        $clientIp = $parts[$dateFieldCount + 5]
-        $port = $parts[$dateFieldCount + 6]
-
-        # Find query type and domain
-        $queryType = ''
-        $domain = ''
-        $flags = ''
-
-        # Look for query type (A, AAAA, PTR, etc.) and domain
-        $startIndex = $dateFieldCount + 7
-        for ($i = $startIndex; $i -lt $parts.Count; $i++) {
-            if ($parts[$i] -match '^\[.*\]$') {
-                $flags = $parts[$i]
-            } elseif ($parts[$i] -match '^(A|AAAA|PTR|MX|NS|CNAME|SOA|TXT|SRV)$') {
-                $queryType = $parts[$i]
-                # Next part should be domain
-                if ($i + 1 -lt $parts.Count) {
-                    $domain = ConvertTo-Fqdn -Name $parts[$i + 1]
-                }
-                break
-            }
-        }
-
-        # Build result
-        $result = @{
-            Timestamp = $timestamp
-            ThreadId  = $threadId
-            Context   = $context
-            PacketId  = $packetId
-            Protocol  = $protocol
-            Direction = $direction
-            ClientIP  = $clientIp
-            Port      = $port
-            QueryType = $queryType
-            Flags     = $flags
-            Domain    = $domain
-        }
-
-        if ($IncludeRawLine) {
-            $result['RawLine'] = $Line
-        }
-
-        return $result
-    } catch {
+    } else {
         return $null
+    }
+
+    # Remaining part after datetime (position 20+)
+    $remaining = $Line.Substring(20).TrimStart()
+
+    # Split on whitespace for remaining fields
+    $parts = $remaining.Split([char[]]@(' ', "`t"), [StringSplitOptions]::RemoveEmptyEntries)
+
+    if ($parts.Count -lt 7) {
+        return $null
+    }
+
+    # Field 3: Thread ID
+    $threadId = $parts[0]
+
+    # Field 4: Context (e.g., PACKET)
+    $context = $parts[1]
+
+    # Field 5: Internal packet identifier
+    $packetId = $parts[2]
+
+    # Field 6: UDP/TCP indicator
+    $protocol = $parts[3]
+
+    # Field 7: Send/Receive indicator
+    $direction = $parts[4]
+
+    # Field 8: Remote IP
+    $remoteIp = $parts[5]
+
+    # Field 9: Xid (hex)
+    $xid = $parts[6]
+
+    # Fields 10-16: Variable position based on Query/Response
+    $partIndex = 7
+    $queryResponse = [string]::Empty
+    $opcode = [string]::Empty
+    $flagsHex = [string]::Empty
+    $flagsChar = [string]::Empty
+    $responseCode = [string]::Empty
+    $questionType = [string]::Empty
+    $questionName = [string]::Empty
+
+    # Check for Response indicator "R"
+    if ($partIndex -lt $parts.Count -and $parts[$partIndex] -eq 'R') {
+        $queryResponse = 'R'
+        $partIndex++
+    }
+
+    # Field 11: Opcode (Q, N, U, ?)
+    if ($partIndex -lt $parts.Count) {
+        $opcode = $parts[$partIndex]
+        $partIndex++
+    }
+
+    # Fields 12-14: Flags section in brackets [FlagsHex FlagsChar ResponseCode]
+    # Format: [8081 DR NOERROR] or [8085 A DR NOERROR]
+    # Find the bracket section
+    $bracketStart = $remaining.IndexOf('[')
+    $bracketEnd = $remaining.IndexOf(']')
+
+    if ($bracketStart -gt -1 -and $bracketEnd -gt $bracketStart) {
+        $bracketContent = $remaining.Substring($bracketStart + 1, $bracketEnd - $bracketStart - 1).Trim()
+        $flagParts = $bracketContent.Split([char[]]@(' ', "`t"), [StringSplitOptions]::RemoveEmptyEntries)
+
+        if ($flagParts.Count -ge 1) {
+            $flagsHex = $flagParts[0]
+        }
+        # ResponseCode is always last (NOERROR, NXDOMAIN, etc.)
+        # FlagsChar is everything between FlagsHex and ResponseCode
+        if ($flagParts.Count -ge 2) {
+            $responseCode = $flagParts[$flagParts.Count - 1]
+            if ($flagParts.Count -gt 2) {
+                $flagsChar = [string]::Join('', $flagParts[1..($flagParts.Count - 2)])
+            }
+        }
+    }
+
+    # Field 15 & 16: Question Type and Name (after the bracket)
+    if ($bracketEnd -gt -1 -and $bracketEnd + 1 -lt $remaining.Length) {
+        $afterBracket = $remaining.Substring($bracketEnd + 1).TrimStart()
+        $afterParts = $afterBracket.Split([char[]]@(' ', "`t"), 2, [StringSplitOptions]::RemoveEmptyEntries)
+
+        if ($afterParts.Count -ge 1) {
+            $questionType = $afterParts[0]
+        }
+        if ($afterParts.Count -ge 2) {
+            $questionName = $afterParts[1].Trim()
+        }
+    }
+
+    # Convert question name to FQDN
+    $fqdn = ConvertTo-Fqdn -EncodedName $questionName
+
+    # Return parsed object using ordered hashtable for performance
+    return [PSCustomObject]@{
+        DateTime      = $dateTime
+        ThreadId      = $threadId
+        Context       = $context
+        PacketId      = $packetId
+        Protocol      = $protocol
+        Direction     = $direction
+        RemoteIP      = $remoteIp
+        Xid           = $xid
+        QueryResponse = $queryResponse
+        Opcode        = $opcode
+        FlagsHex      = $flagsHex
+        FlagsChar     = $flagsChar
+        ResponseCode  = $responseCode
+        QuestionType  = $questionType
+        QuestionName  = $fqdn
     }
 }
