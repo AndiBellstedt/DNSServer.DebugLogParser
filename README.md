@@ -12,9 +12,11 @@ DNSServer.DebugLogParser transforms Windows DNS Server debug logs into structure
 - Parse all 16 fields from DNS debug logs (date, time, protocol, client IP, query type, response codes, etc.)
 - Generate structured CSV output with customizable delimiters
 - Create optional statistical summaries aggregating activity by client, protocol, and query type
+****- ComputerName column always included for consistent multi-server consolidation
 - Process single files or batches via pipeline
 - High-performance parsing optimized for large files (100MB+)
-- Support for internationalization with culture-aware date parsing and formatting
+- Context filtering to focus on PACKET, EVENT, or NOTE entries
+- Culture-aware date parsing and formatting for international servers
 - Optional automatic compression of output files to save disk space
 - Optional removal of source files after successful processing
 - Validates log file headers to ensure data integrity
@@ -84,16 +86,18 @@ Convert-DNSDebugLogFile -InputFile "C:\Logs\dns.log" `
 
 #### Multi-Server Consolidation
 
-Add a ComputerName column when consolidating logs from multiple DNS servers:
+Add a ComputerName value when consolidating logs from multiple DNS servers. The ComputerName column
+is always present in the output - if not specified, the column will be empty:
 
-```powershell
-# Add ComputerName column for multi-server analysis
+```**powershell**
+# Add ComputerName value for multi-server analysis
 Convert-DNSDebugLogFile -InputFile "C:\Logs\dns01.log" `
     -ComputerName "DNS01" `
     -Delimiter "," `
     -OutputType Both
 
-# Output: Files include ComputerName column with "DNS01" value
+# Output: Files include ComputerName column with "DNS01" value at the end
+# The column is always present - empty if -ComputerName not specified
 # Useful for combining data from multiple servers in a single database or dashboard
 ```
 
