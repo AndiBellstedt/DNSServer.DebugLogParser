@@ -1,0 +1,13 @@
+﻿DateTime;ThreadId;Context;PacketId;Protocol;Direction;ClientIP;Xid;Type;Opcode;FlagsHex;FlagsChar;ResponseCode;QuestionType;QuestionName
+1/20/2026 11:00:16 PM;0FE0;PACKET;000002C53117D990;UDP;Rcv;10.0.0.2;c049;Query;Standard;0001;RecursionDesired;NOERROR;A;"odc.officeapps.live.com"
+1/20/2026 11:00:16 PM;0FE0;PACKET;000002C5312634D0;UDP;Snd;10.0.0.1;420b;Query;Standard;0001;RecursionDesired;NOERROR;A;"odc.officeapps.live.com"
+1/20/2026 11:00:17 PM;0FE0;PACKET;000002C530473140;UDP;Rcv;10.0.0.1;420b;Response;Standard;8081;DR;NOERROR;A;"odc.officeapps.live.com"
+1/20/2026 11:00:17 PM;0FE0;PACKET;000002C53117D990;UDP;Snd;10.0.0.2;c049;Response;Standard;8081;DR;NOERROR;A;"odc.officeapps.live.com"
+1/20/2026 11:00:18 PM;0FE0;PACKET;000002C5307CFCD0;UDP;Rcv;10.0.0.2;ede1;Query;Standard;0001;RecursionDesired;NOERROR;A;"ocsp.digicert.com"
+1/20/2026 11:00:18 PM;0FE0;PACKET;000002C530473140;UDP;Snd;10.0.0.1;0014;Query;Standard;0001;RecursionDesired;NOERROR;A;"ocsp.digicert.com"
+1/20/2026 11:00:18 PM;0FE0;PACKET;000002C52F67C0F0;UDP;Rcv;10.0.0.1;0014;Response;Standard;8081;DR;NOERROR;A;"ocsp.digicert.com"
+1/20/2026 11:00:18 PM;0FE0;PACKET;000002C5307CFCD0;UDP;Snd;10.0.0.2;ede1;Response;Standard;8081;DR;NOERROR;A;"ocsp.digicert.com"
+1/20/2026 11:00:22 PM;0FE0;PACKET;000002C52FBF1130;UDP;Rcv;10.0.0.2;1cde;Query;Standard;0001;RecursionDesired;NOERROR;A;"4.au.download.windowsupdate.com"
+1/20/2026 11:00:22 PM;0FE0;PACKET;000002C5302C8C90;UDP;Snd;10.0.0.1;d9e4;Query;Standard;0001;RecursionDesired;NOERROR;A;"4.au.download.windowsupdate.com"
+1/20/2026 11:00:22 PM;0FE0;PACKET;000002C52EBD9920;UDP;Rcv;10.0.0.1;d9e4;Response;Standard;8081;DR;NOERROR;A;"4.au.download.windowsupdate.com"
+1/20/2026 11:00:22 PM;0FE0;PACKET;000002C52FBF1130;UDP;Snd;10.0.0.2;1cde;Response;Standard;8081;DR;NOERROR;A;"4.au.download.windowsupdate.com"

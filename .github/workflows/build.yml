@@ -1,0 +1,39 @@
+﻿on:
+  push:
+    branches:
+      - master
+      - main
+
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install Prerequisites (PowerShell 5.1)
+        run: .\build\prerequisites.ps1
+        shell: powershell
+      - name: Validate (PowerShell 5.1)
+        run: .\build\validate.ps1
+        shell: powershell
+      - name: Install Prerequisites (PowerShell 7)
+        run: .\build\prerequisites.ps1
+        shell: pwsh
+      - name: Validate (PowerShell 7)
+        run: .\build\validate.ps1
+        shell: pwsh
+      - name: Build
+        run: .\build\build.ps1
+        shell: pwsh
+      - name: Publish
+        run: .\build\publish.ps1 -ApiKey $env:APIKEY
+        shell: pwsh
+        env:
+          APIKEY: ${{ secrets.ApiKey }}
+      - name: Release
+        run: .\build\release.ps1
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
