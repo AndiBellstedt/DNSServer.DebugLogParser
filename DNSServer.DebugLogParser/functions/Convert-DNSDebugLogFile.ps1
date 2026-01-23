@@ -257,24 +257,24 @@
         }
 
         <#
-    DNS Debug Log Field Definitions (from log header lines 5-29):
-        Field 1:  Date
-        Field 2:  Time
-        Field 3:  Thread ID
-        Field 4:  Context
-        Field 5:  Internal packet identifier
-        Field 6:  UDP/TCP indicator
-        Field 7:  Send/Receive indicator
-        Field 8:  Client IP
-        Field 9:  Xid (hex)
-        Field 10: Query/Response (R = Response, blank = Query)
-        Field 11: Opcode (Q = Standard Query, N = Notify, U = Update, ? = Unknown)
-        Field 12: Flags (hex) - starts with [
-        Field 13: Flags (char codes) - A=Authoritative, T=Truncated, D=Recursion Desired, R=Recursion Available
-        Field 14: ResponseCode - ends with ]
-        Field 15: Question Type
-        Field 16: Question Name
-    #>
+        DNS Debug Log Field Definitions (from log header lines 5-29):
+            Field 1:  Date
+            Field 2:  Time
+            Field 3:  Thread ID
+            Field 4:  Context
+            Field 5:  Internal packet identifier
+            Field 6:  UDP/TCP indicator
+            Field 7:  Send/Receive indicator
+            Field 8:  Client IP
+            Field 9:  Xid (hex)
+            Field 10: Query/Response (R = Response, blank = Query)
+            Field 11: Opcode (Q = Standard Query, N = Notify, U = Update, ? = Unknown)
+            Field 12: Flags (hex) - starts with [
+            Field 13: Flags (char codes) - A=Authoritative, T=Truncated, D=Recursion Desired, R=Recursion Available
+            Field 14: ResponseCode - ends with ]
+            Field 15: Question Type
+            Field 16: Question Name
+        #>
         $headerTemplateBase = 'DateTime{0}ThreadId{0}Context{0}PacketId{0}Protocol{0}Direction{0}ClientIP{0}Xid{0}Type{0}Opcode{0}FlagsHex{0}FlagsChar{0}ResponseCode{0}QuestionType{0}QuestionName'
         $headerTemplateWithComputer = 'ComputerName{0}DateTime{0}ThreadId{0}Context{0}PacketId{0}Protocol{0}Direction{0}ClientIP{0}Xid{0}Type{0}Opcode{0}FlagsHex{0}FlagsChar{0}ResponseCode{0}QuestionType{0}QuestionName'
         #endregion Initialization
@@ -624,7 +624,7 @@
         #region Completion
         if ($null -ne $dnsParserStopwatch) {
             $dnsParserStopwatch.Stop()
-            Write-Verbose "Processing complete: $fileCount file(s) processed in $($dnsParserStopwatch.Elapsed.ToString('hh\\:mm\\:ss\\.fff'))"
+            Write-Verbose "Processing complete: $fileCount file(s) processed in $($dnsParserStopwatch.Elapsed.ToString())"
         }
         #endregion Completion
     }
