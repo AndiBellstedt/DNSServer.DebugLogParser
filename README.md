@@ -223,7 +223,7 @@ The parsed CSV contains 17 fields extracted from each DNS log entry:
 | Direction    | Snd (Send/Response) or Rcv (Receive/Query)                            | Rcv                         |
 | ClientIP     | IP address of the client making the request                           | 192.168.1.100               |
 | Xid          | DNS transaction ID (hexadecimal)                                      | F8A3                        |
-| Type         | Query or Response (R=Response, blank=Query)                           | R                           |
+| Type         | Query or Response for PACKET context (R=Response, blank=Query; empty for non-PACKET) | R                           |
 | Opcode       | Q=Standard Query, N=Notify, U=Update, ?=Unknown                       | Q                           |
 | FlagsHex     | DNS flags in hexadecimal                                              | 0001                        |
 | FlagsChar    | DNS flags as characters (A=Authoritative, T=Truncated, D/R=Recursion) | DR                          |
