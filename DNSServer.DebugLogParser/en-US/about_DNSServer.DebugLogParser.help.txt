@@ -90,31 +90,37 @@ LONG DESCRIPTION
 
     CSV Data File
     Contains all parsed log entries with the following columns:
-    - Date: Date of the DNS query/response
-    - Time: Time of the DNS query/response
-    - ThreadID: Internal DNS server thread identifier
-    - Context: Operation context (typically empty)
-    - PacketID: DNS packet identifier
+    - DateTime: Date and time of the DNS query/response
+    - ThreadId: Internal DNS server thread identifier
+    - Context: Operation context (PACKET, EVENT, NOTE)
+    - PacketId: DNS packet identifier
     - Protocol: UDP or TCP
-    - Direction: SEND (response) or RECV (query)
-    - RemoteIP: Client IP address
-    - XID: Transaction ID
-    - QueryFlag: Query flags (R, Q, etc.)
-    - QueryType: DNS record type (A, AAAA, MX, PTR, etc.)
-    - QueryName: Domain name queried
+    - Direction: Rcv (received/query) or Snd (sent/response)
+    - ClientIP: Client IP address
+    - Xid: Transaction ID (hex)
+    - Type: Query or Response
+    - Opcode: Standard, Notify, Update, or Unknown
+    - FlagsHex: Query/response flags (hex)
+    - FlagsChar: Flags decoded (Authoritative, Truncated, RecursionDesired, RecursionAvailable)
     - ResponseCode: NOERROR, NXDOMAIN, SERVFAIL, etc.
-    - ResponseFlag: Response flags
-    - ResponseInfo: Additional response information
-    - ResponseIP: IP address in the response (if applicable)
-    - ComputerName: Source server name (optional column)
+    - QuestionType: DNS record type (A, AAAA, MX, PTR, etc.)
+    - QuestionName: Domain name queried
+    - Information: Additional information (for EVENT and NOTE contexts)
+    - ComputerName: Source server name (always present; empty if not specified)
+
+    Note: The ComputerName column is always included at the end of each record to ensure
+    consistent output structure. This facilitates multi-server log consolidation scenarios.
 
     Statistics File (Optional)
     Provides aggregated metrics including:
-    - Query count by client IP address
-    - Query count by protocol (UDP/TCP)
-    - Query count by query type (A, AAAA, MX, etc.)
-    - Top queried domains
-    - Response code distribution
+    - ClientIP: Client IP address
+    - Protocol: UDP or TCP
+    - Direction: Rcv or Snd
+    - QuestionType: DNS record type
+    - Count: Number of queries matching this combination
+    - DateMin: Earliest query date/time for this combination
+    - DateMax: Latest query date/time for this combination
+    - ComputerName: Source server name (always present; empty if not specified)
 
   Performance Optimization
 

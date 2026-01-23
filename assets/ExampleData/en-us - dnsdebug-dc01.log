@@ -30,6 +30,10 @@ Message logging key (for packets - other items use a subset of these fields):
 
 1/20/2026 11:00:16 PM 0FE0 PACKET  000002C53117D990 UDP Rcv 10.0.0.2        c049   Q [0001   D   NOERROR] A      (3)odc(10)officeapps(4)live(3)com(0)
 
+1/20/2026 11:00:16 PM DF0 Note: got GQCS failure on a dead socket context status=995, socket=904, pcon=0000022FB0E463A0, state=-1, IP=0.0.0.0
+1/20/2026 11:00:16 PM 5C8 Note: got GQCS failure on a dead socket context status=995, socket=612, pcon=00000020F4B18490, state=-1, IP=::
+1/20/2026 11:00:16 PM 0518 EVENT   The DNS server has started.
+1/20/2026 11:00:16 PM 05AC EVENT   The DNS server has finished the background loading and signing of zones. All zones are now available for DNS updates and zone transfers, as allowed by their individual zone configuration.
 1/20/2026 11:00:16 PM 0FE0 PACKET  000002C5312634D0 UDP Snd 10.0.0.1        420b   Q [0001   D   NOERROR] A      (3)odc(10)officeapps(4)live(3)com(0)
 
 1/20/2026 11:00:17 PM 0FE0 PACKET  000002C530473140 UDP Rcv 10.0.0.1        420b R Q [8081   DR  NOERROR] A      (3)odc(10)officeapps(4)live(3)com(0)

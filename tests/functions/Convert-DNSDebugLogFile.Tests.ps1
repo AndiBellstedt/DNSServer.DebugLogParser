@@ -213,6 +213,39 @@ Describe "Convert-DNSDebugLogFile - Parameter Contract" {
             $aliasAttr = $computerNameParam.Attributes | Where-Object { $_.TypeName.Name -eq 'Alias' }
             $aliasAttr | Should -Not -BeNullOrEmpty
         }
+
+        It "Should have ContextFilter parameter with ValidateSet attribute" {
+            $contextFilterParam = $paramBlock.Parameters | Where-Object {
+                $_.Name.VariablePath.UserPath -eq 'ContextFilter'
+            }
+
+            $contextFilterParam | Should -Not -BeNullOrEmpty
+            $contextFilterParam.StaticType.Name | Should -Be 'String'
+
+            # Check for ValidateSet
+            $validateSet = $contextFilterParam.Attributes |
+            Where-Object { $_.TypeName.Name -eq 'ValidateSet' }
+
+            $validateSet | Should -Not -BeNullOrEmpty
+
+            # Check expected values
+            $validValues = $validateSet.PositionalArguments | ForEach-Object { $_.Value }
+            $validValues | Should -Contain 'All'
+            $validValues | Should -Contain 'Packet'
+            $validValues | Should -Contain 'Event'
+            $validValues | Should -Contain 'Note'
+            $validValues.Count | Should -Be 4
+        }
+
+        It "Should have ContextFilter parameter with default value of 'All'" {
+            $contextFilterParam = $paramBlock.Parameters | Where-Object {
+                $_.Name.VariablePath.UserPath -eq 'ContextFilter'
+            }
+
+            $contextFilterParam | Should -Not -BeNullOrEmpty
+            $contextFilterParam.DefaultValue | Should -Not -BeNullOrEmpty
+            $contextFilterParam.DefaultValue.Extent.Text | Should -Match "'All'"
+        }
     }
 
     Context "Parameter Naming and Consistency" {

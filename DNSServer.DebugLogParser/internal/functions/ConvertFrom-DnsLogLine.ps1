@@ -10,12 +10,19 @@
         Supports culture-aware date/time parsing to handle DNS debug logs from servers
         with different regional settings (e.g., German DD.MM.YYYY, US MM/DD/YYYY, Swedish YYYY-MM-DD).
 
+        Supports filtering by context type: PACKET, EVENT, or Note.
+
     .PARAMETER Line
         The log line string to parse.
 
     .PARAMETER Culture
         The culture to use for parsing date/time values. Defaults to CurrentCulture.
         DNS Server debug logs use the date format of the Windows locale on the source server.
+
+    .PARAMETER ContextFilter
+        Filters the log lines by context type.
+        Valid values: 'All', 'Packet', 'Event', 'Note'
+        Default is 'All' which processes all context types.
 
     .EXAMPLE
         PS C:\> ConvertFrom-DnsLogLine -Line "20.01.2026 23:00:18 0FE0 PACKET  000002C5307CFCD0 UDP Rcv 10.0.0.2        ede1   Q [0001   D   NOERROR] A      (4)ocsp(8)digicert(3)com(0)"
@@ -35,11 +42,52 @@
         ResponseCode  : NOERROR
         QuestionType  : A
         QuestionName  : ocsp.digicert.com
+        Information   :
+
+    .EXAMPLE
+        PS C:\> ConvertFrom-DnsLogLine -Line "20.01.2026 23:00:18 0518 EVENT   The DNS server has started."
+
+        DateTime      : 1/20/2026 11:00:18 PM
+        ThreadId      : 0518
+        Context       : EVENT
+        PacketId      :
+        Protocol      :
+        Direction     :
+        RemoteIP      :
+        Xid           :
+        QueryResponse :
+        Opcode        :
+        FlagsHex      :
+        FlagsChar     :
+        ResponseCode  :
+        QuestionType  :
+        QuestionName  :
+        Information   : The DNS server has started.
+
+    .EXAMPLE
+        PS C:\> ConvertFrom-DnsLogLine -Line "20.01.2026 23:00:18 5C8 Note: got GQCS failure on a dead socket context status=995, socket=612, pcon=00000020F4B18490, state=-1, IP=::"
+
+        DateTime      : 1/20/2026 11:00:18 PM
+        ThreadId      : 5C8
+        Context       : NOTE
+        PacketId      :
+        Protocol      :
+        Direction     :
+        RemoteIP      :
+        Xid           :
+        QueryResponse :
+        Opcode        :
+        FlagsHex      :
+        FlagsChar     :
+        ResponseCode  :
+        QuestionType  :
+        QuestionName  :
+        Information   : got GQCS failure on a dead socket context status=995, socket=612, pcon=00000020F4B18490, state=-1, IP=::
 
     .NOTES
         Internal function not exported from module.
 
-        Version:    1.1.0.1
+        Version:    1.2.0.0
         Author:     Andi Bellstedt
         Date:       2026-01-23
 
@@ -51,7 +99,11 @@
         $Line,
 
         [System.Globalization.CultureInfo]
-        $Culture = [System.Globalization.CultureInfo]::CurrentCulture
+        $Culture = [System.Globalization.CultureInfo]::CurrentCulture,
+
+        [ValidateSet('All', 'Packet', 'Event', 'Note')]
+        [string]
+        $ContextFilter = 'All'
     )
 
     # Skip empty lines
@@ -120,36 +172,28 @@
     # Remaining part after datetime (uses correct position whether AM/PM was present or not)
     $remaining = $Line.Substring($dateTimeEndPosition).TrimStart()
 
-    # Split on whitespace for remaining fields
+    # Split on whitespace for remaining fields to detect context type
     $parts = $remaining.Split([char[]]@(' ', "`t"), [StringSplitOptions]::RemoveEmptyEntries)
 
-    if ($parts.Count -lt 7) {
+    if ($parts.Count -lt 2) {
         return $null
     }
 
-    # Field 3: Thread ID
+    # Field 3: Thread ID (always first part)
     $threadId = $parts[0]
 
-    # Field 4: Context (e.g., PACKET)
-    $context = $parts[1]
+    # Detect context type from the second part
+    # Known contexts: PACKET, EVENT, Note:
+    $contextRaw = $parts[1]
+    $context = [string]::Empty
+    $information = [string]::Empty
 
-    # Field 5: Internal packet identifier
-    $packetId = $parts[2]
-
-    # Field 6: UDP/TCP indicator
-    $protocol = $parts[3]
-
-    # Field 7: Send/Receive indicator
-    $direction = $parts[4]
-
-    # Field 8: Remote IP
-    $remoteIp = $parts[5]
-
-    # Field 9: Xid (hex)
-    $xid = $parts[6]
-
-    # Fields 10-16: Variable position based on Query/Response
-    $partIndex = 7
+    # Initialize all PACKET-specific fields as empty
+    $packetId = [string]::Empty
+    $protocol = [string]::Empty
+    $direction = [string]::Empty
+    $remoteIp = [string]::Empty
+    $xid = [string]::Empty
     $queryResponse = [string]::Empty
     $opcode = [string]::Empty
     $flagsHex = [string]::Empty
@@ -158,56 +202,121 @@
     $questionType = [string]::Empty
     $questionName = [string]::Empty
 
-    # Check for Response indicator "R"
-    if ($partIndex -lt $parts.Count -and $parts[$partIndex] -eq 'R') {
-        $queryResponse = 'R'
-        $partIndex++
-    }
+    # Determine context type and apply filter
+    if ($contextRaw -eq 'PACKET') {
+        $context = 'PACKET'
 
-    # Field 11: Opcode (Q, N, U, ?)
-    if ($partIndex -lt $parts.Count) {
-        $opcode = $parts[$partIndex]
-        $partIndex++
-    }
-
-    # Fields 12-14: Flags section in brackets [FlagsHex FlagsChar ResponseCode]
-    # Format: [8081 DR NOERROR] or [8085 A DR NOERROR]
-    # Find the bracket section
-    $bracketStart = $remaining.IndexOf('[')
-    $bracketEnd = $remaining.IndexOf(']')
-
-    if ($bracketStart -gt -1 -and $bracketEnd -gt $bracketStart) {
-        $bracketContent = $remaining.Substring($bracketStart + 1, $bracketEnd - $bracketStart - 1).Trim()
-        $flagParts = $bracketContent.Split([char[]]@(' ', "`t"), [StringSplitOptions]::RemoveEmptyEntries)
-
-        if ($flagParts.Count -ge 1) {
-            $flagsHex = $flagParts[0]
+        # Apply context filter
+        if ($ContextFilter -ne 'All' -and $ContextFilter -ne 'Packet') {
+            return $null
         }
-        # ResponseCode is always last (NOERROR, NXDOMAIN, etc.)
-        # FlagsChar is everything between FlagsHex and ResponseCode
-        if ($flagParts.Count -ge 2) {
-            $responseCode = $flagParts[$flagParts.Count - 1]
-            if ($flagParts.Count -gt 2) {
-                $flagsChar = [string]::Join('', $flagParts[1..($flagParts.Count - 2)])
+
+        # Process PACKET context with existing logic
+        if ($parts.Count -lt 7) {
+            return $null
+        }
+
+        # Field 5: Internal packet identifier
+        $packetId = $parts[2]
+
+        # Field 6: UDP/TCP indicator
+        $protocol = $parts[3]
+
+        # Field 7: Send/Receive indicator
+        $direction = $parts[4]
+
+        # Field 8: Remote IP
+        $remoteIp = $parts[5]
+
+        # Field 9: Xid (hex)
+        $xid = $parts[6]
+
+        # Fields 10-16: Variable position based on Query/Response
+        $partIndex = 7
+
+        # Check for Response indicator "R"
+        if ($partIndex -lt $parts.Count -and $parts[$partIndex] -eq 'R') {
+            $queryResponse = 'R'
+            $partIndex++
+        }
+
+        # Field 11: Opcode (Q, N, U, ?)
+        if ($partIndex -lt $parts.Count) {
+            $opcode = $parts[$partIndex]
+            $partIndex++
+        }
+
+        # Fields 12-14: Flags section in brackets [FlagsHex FlagsChar ResponseCode]
+        # Format: [8081 DR NOERROR] or [8085 A DR NOERROR]
+        # Find the bracket section
+        $bracketStart = $remaining.IndexOf('[')
+        $bracketEnd = $remaining.IndexOf(']')
+
+        if ($bracketStart -gt -1 -and $bracketEnd -gt $bracketStart) {
+            $bracketContent = $remaining.Substring($bracketStart + 1, $bracketEnd - $bracketStart - 1).Trim()
+            $flagParts = $bracketContent.Split([char[]]@(' ', "`t"), [StringSplitOptions]::RemoveEmptyEntries)
+
+            if ($flagParts.Count -ge 1) {
+                $flagsHex = $flagParts[0]
+            }
+            # ResponseCode is always last (NOERROR, NXDOMAIN, etc.)
+            # FlagsChar is everything between FlagsHex and ResponseCode
+            if ($flagParts.Count -ge 2) {
+                $responseCode = $flagParts[$flagParts.Count - 1]
+                if ($flagParts.Count -gt 2) {
+                    $flagsChar = [string]::Join('', $flagParts[1..($flagParts.Count - 2)])
+                }
             }
         }
-    }
 
-    # Field 15 & 16: Question Type and Name (after the bracket)
-    if ($bracketEnd -gt -1 -and $bracketEnd + 1 -lt $remaining.Length) {
-        $afterBracket = $remaining.Substring($bracketEnd + 1).TrimStart()
-        $afterParts = $afterBracket.Split([char[]]@(' ', "`t"), 2, [StringSplitOptions]::RemoveEmptyEntries)
+        # Field 15 & 16: Question Type and Name (after the bracket)
+        if ($bracketEnd -gt -1 -and $bracketEnd + 1 -lt $remaining.Length) {
+            $afterBracket = $remaining.Substring($bracketEnd + 1).TrimStart()
+            $afterParts = $afterBracket.Split([char[]]@(' ', "`t"), 2, [StringSplitOptions]::RemoveEmptyEntries)
 
-        if ($afterParts.Count -ge 1) {
-            $questionType = $afterParts[0]
+            if ($afterParts.Count -ge 1) {
+                $questionType = $afterParts[0]
+            }
+            if ($afterParts.Count -ge 2) {
+                $questionName = $afterParts[1].Trim()
+            }
         }
-        if ($afterParts.Count -ge 2) {
-            $questionName = $afterParts[1].Trim()
-        }
-    }
 
-    # Convert question name to FQDN
-    $fqdn = ConvertTo-Fqdn -EncodedName $questionName
+        # Convert question name to FQDN
+        $questionName = ConvertTo-Fqdn -EncodedName $questionName
+
+    } elseif ($contextRaw -eq 'EVENT') {
+        $context = 'EVENT'
+
+        # Apply context filter
+        if ($ContextFilter -ne 'All' -and $ContextFilter -ne 'Event') {
+            return $null
+        }
+
+        # Extract information text (everything after "EVENT" with leading whitespace trimmed)
+        $eventIndex = $remaining.IndexOf('EVENT')
+        if ($eventIndex -gt -1) {
+            $information = $remaining.Substring($eventIndex + 5).TrimStart()
+        }
+
+    } elseif ($contextRaw -eq 'Note:') {
+        $context = 'NOTE'
+
+        # Apply context filter
+        if ($ContextFilter -ne 'All' -and $ContextFilter -ne 'Note') {
+            return $null
+        }
+
+        # Extract information text (everything after "Note:" with leading whitespace trimmed)
+        $noteIndex = $remaining.IndexOf('Note:')
+        if ($noteIndex -gt -1) {
+            $information = $remaining.Substring($noteIndex + 5).TrimStart()
+        }
+
+    } else {
+        # Unknown context type - skip this line
+        return $null
+    }
 
     # Return parsed object using ordered hashtable for performance
     return [PSCustomObject]@{
@@ -225,6 +334,7 @@
         FlagsChar     = $flagsChar
         ResponseCode  = $responseCode
         QuestionType  = $questionType
-        QuestionName  = $fqdn
+        QuestionName  = $questionName
+        Information   = $information
     }
 }

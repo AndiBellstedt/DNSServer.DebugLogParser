@@ -8,7 +8,7 @@ permissions:
   contents: read
 
 jobs:
-  validate:
+  validate-ps51:
     if: ${{ github.event_name == 'push' && github.ref != 'refs/heads/main' }}
     runs-on: windows-latest
 
@@ -20,6 +20,13 @@ jobs:
       - name: Validate (PowerShell 5.1)
         run: .\build\validate.ps1
         shell: powershell
+
+  validate-ps7:
+    if: ${{ github.event_name == 'push' && github.ref != 'refs/heads/main' }}
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v6
       - name: Install Prerequisites (PowerShell 7)
         run: .\build\prerequisites.ps1
         shell: pwsh

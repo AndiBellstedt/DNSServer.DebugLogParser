@@ -1,101 +1,105 @@
 ﻿function Convert-DNSDebugLogFile {
     <#
     .SYNOPSIS
-        Converts Windows DNS Server debug log files to CSV format.
+        Transforms Windows DNS Server debug logs into structured CSV format for analysis and reporting.
 
     .DESCRIPTION
-        High-performance parser for Windows DNS Server debug log files designed to make DNS server
-        activity transparent, analyzable, and evaluable in reporting and analytics tools.
+        Converts Windows DNS Server debug log files into structured CSV data that can be analyzed
+        in Excel, Power BI, SQL databases, or SIEM tools. Designed for security analysis, performance
+        monitoring, troubleshooting, and compliance reporting.
 
-        DNS Server debug logs contain detailed query/response information but are difficult to analyze
-        in their raw text format. This script transforms these logs into structured CSV files that can
-        be imported into Excel, Power BI, SQL databases, or other data analysis platforms.
+        The cmdlet parses all 17 fields from DNS debug logs including date/time, protocol, client IP,
+        query type, domain names, response codes, flags, event information, and computer name. It generates
+        structured CSV output with an optional statistics summary aggregating activity by client, protocol,
+        and query type.
 
-        KEY CAPABILITIES:
-        - Parses all 16 fields from DNS debug logs (date, time, protocol, client IP, query type, etc.)
-        - Generates structured CSV output with customizable delimiters
-        - Creates optional statistical summaries aggregating activity by client, protocol, and query type
-        - Processes single files or batches via pipeline
-        - Supports both standard and detailed DNS debug log formats
-        - Optional automatic compression of output files to save disk space
-        - Optional removal of source files after successful processing
-        - Validates log file headers to ensure data integrity
+        KEY FEATURES:
+        - High-performance parsing optimized for large files (100MB+)
+        - Customizable CSV delimiter (default: semicolon)
+        - Optional statistical summaries with aggregated metrics
+        - Context filtering (PACKET, EVENT, Note) to focus on specific log entry types
+        - Culture-aware date parsing and formatting for international servers
+        - Pipeline support for batch processing multiple files
+        - Optional compression of output files (ZIP format)
+        - Optional automatic removal of source files after processing
+        - Header validation to ensure data integrity
 
-        USE CASES:
-        - Security analysis: Identify suspicious DNS query patterns
-        - Performance monitoring: Track query volumes and response times
-        - Capacity planning: Analyze DNS server load and client distribution
-        - Compliance reporting: Document DNS activity for audit requirements
-        - Troubleshooting: Investigate DNS resolution issues
+        OUTPUT FORMAT:
+        The ComputerName column is always included at the end of each record. If the -ComputerName
+        parameter is not specified, the column will be empty. This ensures consistent output structure
+        for multi-server consolidation scenarios.
 
         PERFORMANCE:
-        Optimized for large files (100MB+) using:
-        - String operations instead of regex for parsing
-        - StreamReader/StreamWriter with 64KB buffers
-        - Manual CSV generation to avoid Export-Csv overhead
-        - Efficient dictionary-based statistics collection
+        Optimized using StreamReader/StreamWriter with 64KB buffers, string operations instead of
+        regex, manual CSV generation, and efficient hashtable-based statistics collection.
 
         COMPATIBILITY:
-        - PowerShell 5.1+ on Windows
-        - PowerShell 7+ on Windows
-        - Windows Server 2016 and later
-        - Supports DNS Server 2012 R2 through 2025 debug log formats
+        - PowerShell 5.1+ (Desktop and Core editions)
+        - Windows Server 2016+
+        - DNS Server 2012 R2 through 2025 log formats
 
     .PARAMETER InputFile
-        Path to the DNS debug log file to parse. Supports arrays for processing multiple files.
+        Specifies the path to the DNS debug log file to parse. Supports arrays for processing multiple files.
+
+        Accepts pipeline input from Get-ChildItem or other file-producing cmdlets.
 
     .PARAMETER OutputFile
-        Optional. Path for the output CSV file.
-        If not specified, uses the input filename with .csv extension.
+        Specifies the path for the output CSV file. If not specified, uses the input filename with .csv extension
+        in the same directory as the input file.
 
-        Must be a file path, not a directory. If you want to specify only the output directory,
-        omit this parameter and the script will use the same directory as the input file.
+        Important: Must be a file path, not a directory. If you want to use the input file's directory with
+        a custom name, specify the full path including filename.
 
     .PARAMETER Delimiter
-        The delimiter character for the CSV output.
+        Specifies the delimiter character for the CSV output.
 
-        Default is semicolon ';'
+        Default: Semicolon (;)
+
+        Common alternatives: Comma (,), Tab (`t), Pipe (|)
+
+        Use semicolon in regions where comma is the decimal separator (Europe). Use comma for standard
+        CSV tools and databases that expect comma-separated values.
 
     .PARAMETER ComputerName
-        Optional. If specified, adds a ComputerName column to the CSV output with the specified value.
-        Useful when consolidating logs from multiple DNS servers.
+        Specifies the value for the ComputerName column in the CSV output. The ComputerName column is
+        always present in the output - if this parameter is not specified, the column will be empty.
 
-        Important: This is NOT a remoting feature. The script processes local files only.
+        Use this when consolidating logs from multiple DNS servers to identify the source server in
+        combined datasets.
+
+        Note: This is NOT a remoting parameter. The cmdlet processes local files only.
 
     .PARAMETER OutputType
         Specifies the type of output to generate.
 
         Valid values:
-        - 'CSV': Generate only the CSV file with parsed log data (default)
-        - 'Statistic': Generate only the statistics file with aggregated data
-        - 'Both': Generate both CSV and statistics files
+        - 'CSV': Generate only the data file with all parsed log entries (default)
+        - 'Statistic': Generate only the statistics file with aggregated metrics
+        - 'Both': Generate both data and statistics files
 
-        Default is 'Both'.
+        Default: Both
+
+        Statistics provide aggregated counts by client IP, protocol, direction, and query type, along with
+        date range for each unique combination.
 
     .PARAMETER SkipHeaderValidation
         Bypasses the DNS debug log header validation check.
 
-        By default, the script validates that input files have a valid DNS Server debug log header structure.
-        Use this switch to process files without header validation, which can be useful for:
-        - Processing modified or custom log formats
+        By default, the cmdlet validates that input files have a valid DNS Server debug log header.
+        Use this switch to process files without validation, which can be useful for:
+        - Modified or custom log formats
         - Troubleshooting validation issues
-        - Processing logs with non-standard headers
+        - Non-standard or pre-processed logs
 
-        Warning: Using this parameter may result in processing errors if the file is not a valid DNS log.
+        Warning: May result in processing errors if the file is not a valid DNS log.
 
     .PARAMETER RemoveSourceFile
         Removes the source DNS debug log file after successful processing.
 
-        Use this switch to automatically delete input files after they have been successfully parsed
-        and output files created. This is useful for:
-        - Automated log processing pipelines
-        - Disk space management in log collection scenarios
-        - Preventing reprocessing of already-converted files
+        Use this for automated log processing pipelines or disk space management. The source file is
+        only removed if processing completes successfully and all output files are created.
 
-        Safety features:
-        - Only removes files after successful processing and output creation
-        - Skips removal if processing fails or is interrupted
-        - Cannot be used with SkipHeaderValidation for safety
+        Safety: Cannot be used with -SkipHeaderValidation to prevent accidental deletion of invalid files.
 
         Warning: Source files are permanently deleted. Ensure output files are valid before using this option.
 
@@ -104,50 +108,60 @@
 
         Creates a .zip file containing the generated CSV file(s), then removes the uncompressed CSV(s).
         The ZIP file is created in the same directory as the output CSV with the same base name.
-        Compression occurs immediately after each file is processed to manage disk space efficiently.
 
         Benefits:
-        - Significantly reduces disk space usage (CSV files compress very well)
+        - Significantly reduces disk space (CSV files typically compress 90%+)
         - Simplifies file management and archival
-        - Suitable for long-term storage of processed logs
+        - Suitable for long-term storage
 
-        Example: Input 'dns.log' generates 'dns.csv' which is compressed to 'dns.zip', then 'dns.csv' is removed.
+        Example: Input 'dns.log' generates 'dns.csv' compressed to 'dns.zip', then 'dns.csv' is removed.
 
-        Compatible with PowerShell 5.1+ and Windows Server 2016+.
+    .PARAMETER ContextFilter
+        Filters which log entry types to include in the output.
+
+        DNS debug logs contain different context types:
+        - PACKET: DNS query and response packet information (primary data)
+        - EVENT: DNS server events (e.g., "The DNS server has started.")
+        - Note: Diagnostic notes and warnings (e.g., socket errors, internal states)
+
+        Valid values:
+        - 'All': Include all context types (default)
+        - 'Packet': Include only PACKET entries (DNS queries/responses)
+        - 'Event': Include only EVENT entries (server events)
+        - 'Note': Include only Note entries (diagnostic information)
+
+        Default: All
+
+        Note: When filtering to 'Event' or 'Note', only DateTime, ThreadId, Context, and Information
+        columns will contain data. Other columns (Protocol, ClientIP, etc.) will be empty.
 
     .PARAMETER InputCulture
-        Specifies the culture to use for parsing date/time values in the DNS debug log.
+        Specifies the culture/locale to use for parsing date/time values in the DNS debug log.
 
         DNS Server debug logs use the date format of the Windows locale on the server where the log
-        was generated. This parameter allows parsing logs from servers with different regional settings.
+        was generated. Use this parameter when processing logs from servers with different regional
+        settings.
 
-        Default is the current culture ([System.Globalization.CultureInfo]::CurrentCulture).
+        Default: Current culture
 
-        Common culture values:
+        Common examples:
         - 'de-DE' or 'de-AT': German format (DD.MM.YYYY or DD/MM/YYYY)
-        - 'en-US': US format (MM/DD/YYYY)
-        - 'en-GB': UK format (DD/MM/YYYY)
+        - 'en-US': US format (MM/DD/YYYY with AM/PM)
+        - 'en-GB': UK format (DD/MM/YYYY with 24-hour time)
         - 'sv-SE': Swedish/ISO format (YYYY-MM-DD)
-
-        Example: -InputCulture 'de-DE' for logs from a German Windows server.
-        Example: -InputCulture ([System.Globalization.CultureInfo]::GetCultureInfo('sv-SE')) for Swedish logs.
 
     .PARAMETER OutputCulture
-        Specifies the culture to use for formatting date/time values in the output CSV files.
+        Specifies the culture/locale to use for formatting date/time values in the output CSV files.
 
-        This parameter controls how DateTime values are written to the CSV output. This is useful
-        when the CSV files will be consumed by applications or systems with specific regional settings.
+        Controls how DateTime values are written to the CSV. Use this when CSV files will be consumed
+        by applications or systems with specific regional settings.
 
-        Default is the current culture ([System.Globalization.CultureInfo]::CurrentCulture).
+        Default: Current culture
 
-        Common culture values:
+        Common examples:
         - 'en-US': US format (MM/DD/YYYY)
         - 'de-DE': German format (DD.MM.YYYY)
-        - 'en-GB': UK format (DD/MM/YYYY)
-        - 'sv-SE': Swedish/ISO format (YYYY-MM-DD)
-
-        Example: -OutputCulture 'en-US' to format dates for US systems.
-        Example: -OutputCulture ([System.Globalization.CultureInfo]::InvariantCulture) for ISO format.
+        - 'sv-SE' or InvariantCulture: ISO format (YYYY-MM-DD) for maximum compatibility
 
     .PARAMETER WhatIf
         Shows what would happen if the cmdlet runs. The cmdlet is not run.
@@ -169,107 +183,76 @@
         Useful for interactive processing when you want to control which files are processed.
 
     .EXAMPLE
-        PS C:\> .\Convert-DnsDebugLogFile.ps1 -InputFile "C:\Logs\dns.log"
+        PS C:\> Convert-DNSDebugLogFile -InputFile "C:\Logs\dns.log"
 
-        Converts the DNS debug log to CSV format using default settings.
-        Outputs: C:\Logs\dns.csv (data file only, semicolon delimiter).
-
-    .EXAMPLE
-        PS C:\> .\Convert-DnsDebugLogFile.ps1 -InputFile "C:\Logs\dns.log" -OutputType Both
-
-        Converts the DNS debug log and generates both output files.
-        Outputs: C:\Logs\dns.csv (data) and C:\Logs\dns_statistic.csv (aggregated statistics).
+        Converts the DNS debug log using default settings (both data and statistics files with semicolon delimiter).
+        Output: C:\Logs\dns.csv and C:\Logs\dns_statistic.csv
 
     .EXAMPLE
-        PS C:\> .\Convert-DnsDebugLogFile.ps1 -InputFile "C:\Logs\dns.log" -OutputType Statistic
+        PS C:\> Convert-DNSDebugLogFile -InputFile "C:\Logs\dns.log" -OutputType CSV
 
-        Generates only the statistics file without creating the full CSV data file.
-        Outputs: C:\Logs\dns_statistic.csv (statistics only).
-
-    .EXAMPLE
-        PS C:\> .\Convert-DnsDebugLogFile.ps1 -InputFile "C:\Logs\dns.log" -OutputFile "C:\Output\parsed.csv"
-
-        Converts the DNS debug log to a custom output location.
-        Outputs: C:\Output\parsed.csv.
+        Generates only the data file without statistics.
+        Output: C:\Logs\dns.csv
 
     .EXAMPLE
-        PS C:\> .\Convert-DnsDebugLogFile.ps1 -InputFile "C:\Logs\dns.log" -Delimiter "," -ComputerName "DNS01" -OutputType Both
+        PS C:\> Convert-DNSDebugLogFile -InputFile "C:\Logs\dns.log" -OutputType Statistic
 
-        Converts the log using comma delimiter with a ComputerName column.
-        Outputs: C:\Logs\dns.csv and C:\Logs\dns_statistic.csv, both with "DNS01" in ComputerName column.
-
-    .EXAMPLE
-        PS C:\> Get-ChildItem "C:\Logs\*.log" | .\Convert-DnsDebugLogFile.ps1 -OutputType Both
-
-        Processes multiple DNS debug log files via pipeline.
-        Outputs: For each .log file, generates both .csv (data) and _statistic.csv (statistics) files.
+        Generates only the statistics file with aggregated metrics.
+        Output: C:\Logs\dns_statistic.csv
 
     .EXAMPLE
-        PS C:\> .\Convert-DnsDebugLogFile.ps1 -InputFile "C:\Logs\dns.log" -CompressOutput
+        PS C:\> Convert-DNSDebugLogFile -InputFile "C:\Logs\dns.log" -OutputFile "C:\Output\parsed.csv"
 
-        Converts the DNS debug log and compresses the output to a ZIP archive.
-        Outputs: C:\Logs\dns.zip containing dns.csv. The uncompressed csv file is removed after compression.
-
-    .EXAMPLE
-        PS C:\> .\Convert-DnsDebugLogFile.ps1 -InputFile "C:\Logs\dns.log" -OutputType Both -CompressOutput
-
-        Converts the log with statistics and compresses both output files.
-        Outputs: C:\Logs\dns.zip containing both dns.csv and dns_statistic.csv.
+        Converts the log to a custom output location.
+        Output: C:\Output\parsed.csv
 
     .EXAMPLE
-        PS C:\> Get-ChildItem "C:\Logs\*.log" | .\Convert-DnsDebugLogFile.ps1 -RemoveSourceFile -CompressOutput
+        PS C:\> Convert-DNSDebugLogFile -InputFile "C:\Logs\dns.log" -Delimiter "," -ComputerName "DNS01" -OutputType Both
 
-        Processes multiple log files, compresses output, and removes source files.
-        Each .log file is converted to compressed .zip, then the source .log file is deleted.
-        Ideal for automated log archival pipelines.
-
-    .EXAMPLE
-        PS C:\> .\Convert-DnsDebugLogFile.ps1 -InputFile "C:\Logs\old_dns.log" -RemoveSourceFile -Verbose
-
-        Converts the log file and removes the source after successful processing.
-        Verbose output confirms file removal. Use with caution as source files are permanently deleted.
+        Converts with comma delimiter and adds ComputerName column with value "DNS01".
+        Output: C:\Logs\dns.csv and C:\Logs\dns_statistic.csv with ComputerName column
 
     .EXAMPLE
-        PS C:\> .\Convert-DnsDebugLogFile.ps1 -InputFile "C:\Logs\dns.log" -InputCulture 'de-DE'
+        PS C:\> Get-ChildItem "C:\Logs\*.log" | Convert-DNSDebugLogFile -OutputType Both
 
-        Converts a DNS debug log from a German Windows server.
-        Use this when the log file originates from a server with different regional settings.
-
-    .EXAMPLE
-        PS C:\> .\Convert-DnsDebugLogFile.ps1 -InputFile "C:\Logs\dns.log" -InputCulture ([System.Globalization.CultureInfo]::GetCultureInfo('sv-SE'))
-
-        Converts a DNS debug log from a Swedish Windows server using ISO date format (YYYY-MM-DD).
-        Useful for processing logs from servers with different locale settings.
+        Batch processes multiple DNS debug log files via pipeline.
+        Output: For each .log file, generates .csv and _statistic.csv files
 
     .EXAMPLE
-        PS C:\> .\Convert-DnsDebugLogFile.ps1 -InputFile "C:\Logs\dns.log" -InputCulture 'de-DE' -OutputCulture 'en-US'
+        PS C:\> Convert-DNSDebugLogFile -InputFile "C:\Logs\dns.log" -CompressOutput
 
-        Converts a DNS debug log from a German Windows server and formats output dates for US systems.
-        Useful for processing logs from international servers for consumption by US-based systems.
-
-    .EXAMPLE
-        PS C:\> .\Convert-DnsDebugLogFile.ps1 -InputFile "C:\Logs\dns.log" -OutputCulture ([System.Globalization.CultureInfo]::InvariantCulture)
-
-        Converts a DNS debug log and formats output dates using ISO 8601 format (YYYY-MM-DD).
-        Ideal for cross-platform compatibility or data interchange scenarios.
+        Converts and compresses output to ZIP archive.
+        Output: C:\Logs\dns.zip (containing dns.csv and dns_statistic.csv)
 
     .EXAMPLE
-        PS C:\> .\Convert-DnsDebugLogFile.ps1 -InputFile "C:\Logs\dns.log" -WhatIf
+        PS C:\> Convert-DNSDebugLogFile -InputFile "C:\Logs\dns.log" -RemoveSourceFile -Verbose
 
-        Shows what would happen if the command runs without actually creating any files.
-        Useful for testing command parameters before processing actual data.
+        Converts the log and removes the source file after successful processing.
+        Verbose output confirms file removal.
 
     .EXAMPLE
-        PS C:\> .\Convert-DnsDebugLogFile.ps1 -InputFile "C:\Logs\dns.log" -RemoveSourceFile -CompressOutput -WhatIf
+        PS C:\> Convert-DNSDebugLogFile -InputFile "C:\Logs\dns.log" -InputCulture 'de-DE' -OutputCulture 'en-US'
 
-        Previews the complete workflow including compression and source file removal.
-        No files are created, compressed, or deleted - only shows what would happen.
+        Parses German date format (DD.MM.YYYY) and outputs in US format (MM/DD/YYYY).
+        Use when processing logs from servers with different regional settings.
+
+    .EXAMPLE
+        PS C:\> Convert-DNSDebugLogFile -InputFile "C:\Logs\dns.log" -ContextFilter 'Packet'
+
+        Converts only DNS query/response packet entries, excluding EVENT and Note entries.
+        Use to focus analysis on actual DNS traffic.
+
+    .EXAMPLE
+        PS C:\> Get-ChildItem "C:\Logs\*.log" | Convert-DNSDebugLogFile -RemoveSourceFile -CompressOutput
+
+        Automated log archival: processes all logs, compresses output, and removes source files.
+        Ideal for scheduled log processing pipelines.
 
     .NOTES
-        Version:    1.2.0.0
-        Author:     Andreas Bellstedt, Copilot
-        Date:       2026-01-23
-        Keywords:   Microsoft, Windows Server, DNSServer, DNS, DebugLog, LogParser
+        Version  : 1.3.0.1
+        Author   : Andi Bellstedt, Copilot
+        Date     : 2026-01-23
+        Keywords : Microsoft Windows Server, DNSServer, DNS, DebugLog, LogParser
 
     .LINK
         https://github.com/AndiBellstedt/DNSServer.DebugLogParser
@@ -320,6 +303,11 @@
         [Parameter()]
         [switch]
         $CompressOutput,
+
+        [Parameter()]
+        [ValidateSet('All', 'Packet', 'Event', 'Note')]
+        [string]
+        $ContextFilter = 'All',
 
         [Parameter()]
         [ArgumentCompleter({
@@ -405,8 +393,7 @@
             Field 15: Question Type
             Field 16: Question Name
         #>
-        $headerTemplateBase = 'DateTime{0}ThreadId{0}Context{0}PacketId{0}Protocol{0}Direction{0}ClientIP{0}Xid{0}Type{0}Opcode{0}FlagsHex{0}FlagsChar{0}ResponseCode{0}QuestionType{0}QuestionName'
-        $headerTemplateWithComputer = 'ComputerName{0}DateTime{0}ThreadId{0}Context{0}PacketId{0}Protocol{0}Direction{0}ClientIP{0}Xid{0}Type{0}Opcode{0}FlagsHex{0}FlagsChar{0}ResponseCode{0}QuestionType{0}QuestionName'
+        $headerTemplate = 'DateTime{0}ThreadId{0}Context{0}PacketId{0}Protocol{0}Direction{0}ClientIP{0}Xid{0}Type{0}Opcode{0}FlagsHex{0}FlagsChar{0}ResponseCode{0}QuestionType{0}QuestionName{0}Information{0}ComputerName'
         #endregion Initialization
 
         # Start a stopwatch to measure total script runtime and a file counter
@@ -434,6 +421,7 @@
                 continue
             }
 
+            # Check if input path is a directory
             if ((Get-Item -Path $currentFile).PSIsContainer) {
                 $errorRecord = [System.Management.Automation.ErrorRecord]::new(
                     [System.ArgumentException]::new("Input path is a directory, not a file: '$currentFile'. Please specify a file path."),
@@ -466,7 +454,7 @@
                     $PSCmdlet.WriteError($errorRecord)
                     continue
                 }
-                Write-Verbose "Header validation successful - will skip $skipLines header lines"
+                Write-Verbose "Header validation successful ($skipLines header lines)"
             }
 
             # Calculate output path for this input file
@@ -482,20 +470,13 @@
                 }
             }
 
-            Write-Verbose "Starting processing: '$resolvedPath'"
-            Write-Verbose "Output path: '$currentOutputPath'"
-            Write-Verbose "CSV delimiter: '$Delimiter'"
-            Write-Verbose "Output type: $($OutputType)"
-            Write-Verbose "Input culture for date parsing: $($InputCulture.Name) ($($InputCulture.DisplayName))"
-            Write-Verbose "Output culture for date formatting: $($OutputCulture.Name) ($($OutputCulture.DisplayName))"
+            Write-Verbose "Starting processing: '$resolvedPath' (Input culture for date parsing: $($InputCulture.Name) [$($InputCulture.DisplayName)])"
+            Write-Verbose "Output type: $($OutputType) | CSV delimiter: '$Delimiter'"
+            Write-Verbose "Output path: '$currentOutputPath' (Output culture for date formatting: $($OutputCulture.Name) [$($OutputCulture.DisplayName)])"
 
-            # Build header with specified delimiter (conditionally include ComputerName)
-            $includeComputerName = -not [string]::IsNullOrEmpty($ComputerName)
-            if ($includeComputerName) {
-                $header = $headerTemplateWithComputer -f $Delimiter
-            } else {
-                $header = $headerTemplateBase -f $Delimiter
-            }
+            # Build header with specified delimiter (ComputerName is always included at the end)
+            $header = $headerTemplate -f $Delimiter
+            $computerNameValue = if ([string]::IsNullOrEmpty($ComputerName)) { '' } else { $ComputerName }
 
             # Use StreamReader for maximum performance with large files
             $reader = $null
@@ -544,86 +525,58 @@
                     $line = $reader.ReadLine()
                     $lineCount++
 
-                    $parsed = ConvertFrom-DnsLogLine -Line $line -Culture $InputCulture
+                    $parsed = ConvertFrom-DnsLogLine -Line $line -Culture $InputCulture -ContextFilter $ContextFilter
                     if ($null -ne $parsed) {
                         # Build CSV line manually for performance (avoiding Export-Csv overhead) - only if needed
                         if ($writeCsvData) {
                             # Format DateTime using OutputCulture for culture-aware output
                             $formattedDateTime = $parsed.DateTime.ToString($outputDateTimeFormat, $OutputCulture)
 
-                            if ($includeComputerName) {
-                                $csvLine = ($ComputerName + $Delimiter + '{0}' + $Delimiter + '{1}' + $Delimiter + '{2}' + $Delimiter + '{3}' + $Delimiter + '{4}' + $Delimiter + '{5}' + $Delimiter + '{6}' + $Delimiter + '{7}' + $Delimiter + '{8}' + $Delimiter + '{9}' + $Delimiter + '{10}' + $Delimiter + '{11}' + $Delimiter + '{12}' + $Delimiter + '{13}' + $Delimiter + '"{14}"') -f @(
-                                    $formattedDateTime,
-                                    $parsed.ThreadId,
-                                    $parsed.Context,
-                                    $parsed.PacketId,
-                                    $parsed.Protocol,
-                                    $parsed.Direction,
-                                    $parsed.RemoteIP,
-                                    $parsed.Xid,
-                                    $(
-                                        if ($parsed.QueryResponse -eq 'R') { 'Response' } else { 'Query' }
-                                    ),
-                                    $(
-                                        switch ($parsed.Opcode) {
-                                            'Q' { 'Standard' }
-                                            'N' { 'Notify' }
-                                            'U' { 'Update' }
-                                            '?' { 'Unknown' }
-                                            default { $parsed.Opcode }
-                                        }
-                                    ),
-                                    $parsed.FlagsHex,
-                                    $(
-                                        switch ($parsed.FlagsChar) {
-                                            'A' { 'Authoritative' }
-                                            'T' { 'Truncated' }
-                                            'D' { 'RecursionDesired' }
-                                            'R' { 'RecursionAvailable' }
-                                            default { $parsed.FlagsChar }
-                                        }
-                                    ),
-                                    $parsed.ResponseCode,
-                                    $parsed.QuestionType,
-                                    $parsed.QuestionName
-                                )
-                            } else {
-                                $csvLine = ('{0}' + $Delimiter + '{1}' + $Delimiter + '{2}' + $Delimiter + '{3}' + $Delimiter + '{4}' + $Delimiter + '{5}' + $Delimiter + '{6}' + $Delimiter + '{7}' + $Delimiter + '{8}' + $Delimiter + '{9}' + $Delimiter + '{10}' + $Delimiter + '{11}' + $Delimiter + '{12}' + $Delimiter + '{13}' + $Delimiter + '"{14}"') -f @(
-                                    $formattedDateTime,
-                                    $parsed.ThreadId,
-                                    $parsed.Context,
-                                    $parsed.PacketId,
-                                    $parsed.Protocol,
-                                    $parsed.Direction,
-                                    $parsed.RemoteIP,
-                                    $parsed.Xid,
-                                    $(
-                                        if ($parsed.QueryResponse -eq 'R') { 'Response' } else { 'Query' }
-                                    ),
-                                    $(
-                                        switch ($parsed.Opcode) {
-                                            'Q' { 'Standard' }
-                                            'N' { 'Notify' }
-                                            'U' { 'Update' }
-                                            '?' { 'Unknown' }
-                                            default { $parsed.Opcode }
-                                        }
-                                    ),
-                                    $parsed.FlagsHex,
-                                    $(
-                                        switch ($parsed.FlagsChar) {
-                                            'A' { 'Authoritative' }
-                                            'T' { 'Truncated' }
-                                            'D' { 'RecursionDesired' }
-                                            'R' { 'RecursionAvailable' }
-                                            default { $parsed.FlagsChar }
-                                        }
-                                    ),
-                                    $parsed.ResponseCode,
-                                    $parsed.QuestionType,
-                                    $parsed.QuestionName
-                                )
-                            }
+                            # Escape double quotes in QuestionName and Information fields for proper CSV formatting
+                            # Standard CSV escaping: replace " with ""
+                            $escapedQuestionName = $parsed.QuestionName -replace '"', '""'
+                            $escapedInformation = $parsed.Information -replace '"', '""'
+
+                            # ComputerName is always included at the end
+                            $csvLine = ('{0}' + $Delimiter + '{1}' + $Delimiter + '{2}' + $Delimiter + '{3}' + $Delimiter + '{4}' + $Delimiter + '{5}' + $Delimiter + '{6}' + $Delimiter + '{7}' + $Delimiter + '{8}' + $Delimiter + '{9}' + $Delimiter + '{10}' + $Delimiter + '{11}' + $Delimiter + '{12}' + $Delimiter + '{13}' + $Delimiter + '"{14}"' + $Delimiter + '"{15}"' + $Delimiter + '{16}') -f @(
+                                $formattedDateTime,
+                                $parsed.ThreadId,
+                                $parsed.Context,
+                                $parsed.PacketId,
+                                $parsed.Protocol,
+                                $parsed.Direction,
+                                $parsed.RemoteIP,
+                                $parsed.Xid,
+                                $(
+                                    if ($parsed.QueryResponse -eq 'R') { 'Response' }
+                                    elseif ($parsed.Context -eq 'PACKET') { 'Query' }
+                                    else { '' }
+                                ),
+                                $(
+                                    switch ($parsed.Opcode) {
+                                        'Q' { 'Standard' }
+                                        'N' { 'Notify' }
+                                        'U' { 'Update' }
+                                        '?' { 'Unknown' }
+                                        default { $parsed.Opcode }
+                                    }
+                                ),
+                                $parsed.FlagsHex,
+                                $(
+                                    switch ($parsed.FlagsChar) {
+                                        'A' { 'Authoritative' }
+                                        'T' { 'Truncated' }
+                                        'D' { 'RecursionDesired' }
+                                        'R' { 'RecursionAvailable' }
+                                        default { $parsed.FlagsChar }
+                                    }
+                                ),
+                                $parsed.ResponseCode,
+                                $parsed.QuestionType,
+                                $escapedQuestionName,
+                                $escapedInformation,
+                                $computerNameValue
+                            )
 
                             # Write CSV line
                             $writer.WriteLine($csvLine)
@@ -667,23 +620,15 @@
                         try {
                             $statWriter = [System.IO.StreamWriter]::new($statPath, $false, [System.Text.Encoding]::UTF8, 65536)
 
-                            # Write statistics header (conditionally include ComputerName)
-                            if ($includeComputerName) {
-                                $statWriter.WriteLine('ComputerName' + $Delimiter + 'ClientIP' + $Delimiter + 'Protocol' + $Delimiter + 'Direction' + $Delimiter + 'QuestionType' + $Delimiter + 'Count' + $Delimiter + 'DateMin' + $Delimiter + 'DateMax')
-                            } else {
-                                $statWriter.WriteLine('ClientIP' + $Delimiter + 'Protocol' + $Delimiter + 'Direction' + $Delimiter + 'QuestionType' + $Delimiter + 'Count' + $Delimiter + 'DateMin' + $Delimiter + 'DateMax')
-                            }
+                            # Write statistics header (ComputerName is always included at the end)
+                            $statWriter.WriteLine('ClientIP' + $Delimiter + 'Protocol' + $Delimiter + 'Direction' + $Delimiter + 'QuestionType' + $Delimiter + 'Count' + $Delimiter + 'DateMin' + $Delimiter + 'DateMax' + $Delimiter + 'ComputerName')
 
                             # Write statistics data
                             foreach ($kvp in $statistics.GetEnumerator()) {
                                 $keyParts = $kvp.Key.Split('|')
                                 $dateMinFormatted = $kvp.Value[1].ToString($outputDateTimeFormat, $OutputCulture)
                                 $dateMaxFormatted = $kvp.Value[2].ToString($outputDateTimeFormat, $OutputCulture)
-                                if ($includeComputerName) {
-                                    $statLine = $ComputerName + $Delimiter + $keyParts[0] + $Delimiter + $keyParts[1] + $Delimiter + $keyParts[2] + $Delimiter + $keyParts[3] + $Delimiter + $kvp.Value[0].ToString() + $Delimiter + $dateMinFormatted + $Delimiter + $dateMaxFormatted
-                                } else {
-                                    $statLine = $keyParts[0] + $Delimiter + $keyParts[1] + $Delimiter + $keyParts[2] + $Delimiter + $keyParts[3] + $Delimiter + $kvp.Value[0].ToString() + $Delimiter + $dateMinFormatted + $Delimiter + $dateMaxFormatted
-                                }
+                                $statLine = $keyParts[0] + $Delimiter + $keyParts[1] + $Delimiter + $keyParts[2] + $Delimiter + $keyParts[3] + $Delimiter + $kvp.Value[0].ToString() + $Delimiter + $dateMinFormatted + $Delimiter + $dateMaxFormatted + $Delimiter + $computerNameValue
                                 $statWriter.WriteLine($statLine)
                             }
 
