@@ -2,6 +2,9 @@
 
 ## 1.1.0 (2026-01-23)
 
+### Added
+* Added Information field to capture EVENT and NOTE context details in CSV output
+
 ### Changed
 * **BREAKING**: ComputerName column now always included at the end of all output records
   * Previously: ComputerName was conditionally included at the beginning when parameter was specified
