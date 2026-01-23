@@ -21,6 +21,9 @@
   * Benefit: Consistent output structure simplifies multi-server log consolidation and automated processing
   * Impact: Existing scripts that parse column positions or expect conditional column presence must be updated
 
+### Added
+* Context filtering to focus on specific log entry types (PACKET, EVENT, NOTE) via ContextFilter parameter
+
 ### Improved
 * Refactored comment-based help for Convert-DNSDebugLogFile for better clarity and conciseness
 * Updated parameter descriptions to be more informative and actionable
