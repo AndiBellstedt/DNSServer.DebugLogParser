@@ -234,6 +234,18 @@
         Converts a DNS debug log and formats output dates using ISO 8601 format (YYYY-MM-DD).
         Ideal for cross-platform compatibility or data interchange scenarios.
 
+    .EXAMPLE
+        PS C:\> .\Convert-DnsDebugLogFile.ps1 -InputFile "C:\Logs\dns.log" -WhatIf
+
+        Shows what would happen if the command runs without actually creating any files.
+        Useful for testing command parameters before processing actual data.
+
+    .EXAMPLE
+        PS C:\> .\Convert-DnsDebugLogFile.ps1 -InputFile "C:\Logs\dns.log" -RemoveSourceFile -CompressOutput -WhatIf
+
+        Previews the complete workflow including compression and source file removal.
+        No files are created, compressed, or deleted - only shows what would happen.
+
     .NOTES
         Version:    1.2.0.0
         Author:     Andreas Bellstedt, Copilot
@@ -244,7 +256,10 @@
         https://github.com/AndiBellstedt/DNSServer.DebugLogParser
 
     #>
-    [CmdletBinding()]
+    [CmdletBinding(
+        SupportsShouldProcess = $true,
+        ConfirmImpact = 'Medium'
+    )]
     param(
         [Parameter(
             Mandatory = $true,
@@ -487,10 +502,16 @@
 
                 # Only create CSV writer if we're outputting CSV data
                 if ($writeCsvData) {
-                    Write-Verbose "Initializing CSV writer for: '$currentOutputPath'"
-                    $writer = [System.IO.StreamWriter]::new($currentOutputPath, $false, [System.Text.Encoding]::UTF8, 65536)
-                    # Write CSV header
-                    $writer.WriteLine($header)
+                    # Check if we should process (WhatIf support)
+                    if ($PSCmdlet.ShouldProcess($currentOutputPath, "Create CSV output file")) {
+                        Write-Verbose "Initializing CSV writer for: '$currentOutputPath'"
+                        $writer = [System.IO.StreamWriter]::new($currentOutputPath, $false, [System.Text.Encoding]::UTF8, 65536)
+                        # Write CSV header
+                        $writer.WriteLine($header)
+                    } else {
+                        # In WhatIf mode, don't create writer
+                        $writeCsvData = $false
+                    }
                 }
 
                 # Skip header lines (validated count from Test-DnsDebugLogHeader)
@@ -621,33 +642,36 @@
                         [System.IO.Path]::GetFileNameWithoutExtension($currentOutputPath) + '_statistic' + [System.IO.Path]::GetExtension($currentOutputPath)
                     )
 
-                    $statWriter = $null
-                    try {
-                        $statWriter = [System.IO.StreamWriter]::new($statPath, $false, [System.Text.Encoding]::UTF8, 65536)
+                    # Check if we should process (WhatIf support)
+                    if ($PSCmdlet.ShouldProcess($statPath, "Create statistics output file")) {
+                        $statWriter = $null
+                        try {
+                            $statWriter = [System.IO.StreamWriter]::new($statPath, $false, [System.Text.Encoding]::UTF8, 65536)
 
-                        # Write statistics header (conditionally include ComputerName)
-                        if ($includeComputerName) {
-                            $statWriter.WriteLine('ComputerName' + $Delimiter + 'ClientIP' + $Delimiter + 'Protocol' + $Delimiter + 'Direction' + $Delimiter + 'QuestionType' + $Delimiter + 'Count' + $Delimiter + 'DateMin' + $Delimiter + 'DateMax')
-                        } else {
-                            $statWriter.WriteLine('ClientIP' + $Delimiter + 'Protocol' + $Delimiter + 'Direction' + $Delimiter + 'QuestionType' + $Delimiter + 'Count' + $Delimiter + 'DateMin' + $Delimiter + 'DateMax')
-                        }
-
-                        # Write statistics data
-                        foreach ($kvp in $statistics.GetEnumerator()) {
-                            $keyParts = $kvp.Key.Split('|')
-                            $dateMinFormatted = $kvp.Value[1].ToString($outputDateTimeFormat, $OutputCulture)
-                            $dateMaxFormatted = $kvp.Value[2].ToString($outputDateTimeFormat, $OutputCulture)
+                            # Write statistics header (conditionally include ComputerName)
                             if ($includeComputerName) {
-                                $statLine = $ComputerName + $Delimiter + $keyParts[0] + $Delimiter + $keyParts[1] + $Delimiter + $keyParts[2] + $Delimiter + $keyParts[3] + $Delimiter + $kvp.Value[0].ToString() + $Delimiter + $dateMinFormatted + $Delimiter + $dateMaxFormatted
+                                $statWriter.WriteLine('ComputerName' + $Delimiter + 'ClientIP' + $Delimiter + 'Protocol' + $Delimiter + 'Direction' + $Delimiter + 'QuestionType' + $Delimiter + 'Count' + $Delimiter + 'DateMin' + $Delimiter + 'DateMax')
                             } else {
-                                $statLine = $keyParts[0] + $Delimiter + $keyParts[1] + $Delimiter + $keyParts[2] + $Delimiter + $keyParts[3] + $Delimiter + $kvp.Value[0].ToString() + $Delimiter + $dateMinFormatted + $Delimiter + $dateMaxFormatted
+                                $statWriter.WriteLine('ClientIP' + $Delimiter + 'Protocol' + $Delimiter + 'Direction' + $Delimiter + 'QuestionType' + $Delimiter + 'Count' + $Delimiter + 'DateMin' + $Delimiter + 'DateMax')
                             }
-                            $statWriter.WriteLine($statLine)
-                        }
 
-                        Write-Verbose "Successfully exported statistics to: '$statPath' ($($statistics.Count) unique groups)"
-                    } finally {
-                        if ($null -ne $statWriter) { $statWriter.Dispose() }
+                            # Write statistics data
+                            foreach ($kvp in $statistics.GetEnumerator()) {
+                                $keyParts = $kvp.Key.Split('|')
+                                $dateMinFormatted = $kvp.Value[1].ToString($outputDateTimeFormat, $OutputCulture)
+                                $dateMaxFormatted = $kvp.Value[2].ToString($outputDateTimeFormat, $OutputCulture)
+                                if ($includeComputerName) {
+                                    $statLine = $ComputerName + $Delimiter + $keyParts[0] + $Delimiter + $keyParts[1] + $Delimiter + $keyParts[2] + $Delimiter + $keyParts[3] + $Delimiter + $kvp.Value[0].ToString() + $Delimiter + $dateMinFormatted + $Delimiter + $dateMaxFormatted
+                                } else {
+                                    $statLine = $keyParts[0] + $Delimiter + $keyParts[1] + $Delimiter + $keyParts[2] + $Delimiter + $keyParts[3] + $Delimiter + $kvp.Value[0].ToString() + $Delimiter + $dateMinFormatted + $Delimiter + $dateMaxFormatted
+                                }
+                                $statWriter.WriteLine($statLine)
+                            }
+
+                            Write-Verbose "Successfully exported statistics to: '$statPath' ($($statistics.Count) unique groups)"
+                        } finally {
+                            if ($null -ne $statWriter) { $statWriter.Dispose() }
+                        }
                     }
                 }
             } finally {
@@ -675,49 +699,55 @@
                 }
 
                 if ($filesToCompress.Count -gt 0) {
-                    try {
-                        Write-Verbose "Starting compression: $($filesToCompress.Count) file(s) to '$zipPath'"
-                        # Remove existing ZIP if present
-                        if (Test-Path -Path $zipPath) {
-                            Write-Verbose "Removing existing ZIP file: '$zipPath'"
-                            Remove-Item -Path $zipPath -Force -ErrorAction Stop
-                        }
+                    # Check if we should process (WhatIf support)
+                    if ($PSCmdlet.ShouldProcess($zipPath, "Compress output files and remove originals")) {
+                        try {
+                            Write-Verbose "Starting compression: $($filesToCompress.Count) file(s) to '$zipPath'"
+                            # Remove existing ZIP if present
+                            if (Test-Path -Path $zipPath) {
+                                Write-Verbose "Removing existing ZIP file: '$zipPath'"
+                                Remove-Item -Path $zipPath -Force -ErrorAction Stop
+                            }
 
-                        # Compress output files
-                        Compress-Archive -Path $filesToCompress -DestinationPath $zipPath -CompressionLevel Optimal -ErrorAction Stop
-                        Write-Verbose "Successfully compressed output to: '$zipPath'"
+                            # Compress output files
+                            Compress-Archive -Path $filesToCompress -DestinationPath $zipPath -CompressionLevel Optimal -ErrorAction Stop
+                            Write-Verbose "Successfully compressed output to: '$zipPath'"
 
-                        # Remove uncompressed CSV files after successful compression
-                        foreach ($file in $filesToCompress) {
-                            Remove-Item -Path $file -Force -ErrorAction Stop
-                            Write-Verbose "Removed uncompressed file: '$file'"
+                            # Remove uncompressed CSV files after successful compression
+                            foreach ($file in $filesToCompress) {
+                                Remove-Item -Path $file -Force -ErrorAction Stop
+                                Write-Verbose "Removed uncompressed file: '$file'"
+                            }
+                        } catch {
+                            $errorRecord = [System.Management.Automation.ErrorRecord]::new(
+                                [System.IO.IOException]::new("Failed to compress output files: $_"),
+                                'CompressionFailed',
+                                [System.Management.Automation.ErrorCategory]::WriteError,
+                                $zipPath
+                            )
+                            $PSCmdlet.WriteError($errorRecord)
                         }
-                    } catch {
-                        $errorRecord = [System.Management.Automation.ErrorRecord]::new(
-                            [System.IO.IOException]::new("Failed to compress output files: $_"),
-                            'CompressionFailed',
-                            [System.Management.Automation.ErrorCategory]::WriteError,
-                            $zipPath
-                        )
-                        $PSCmdlet.WriteError($errorRecord)
                     }
                 }
             }
 
             # Remove source file if requested (only after successful processing)
             if ($RemoveSourceFile) {
-                try {
-                    Write-Verbose "Removing source file: '$resolvedPath'"
-                    Remove-Item -Path $resolvedPath -Force -ErrorAction Stop
-                    Write-Verbose "Successfully removed source file: '$resolvedPath'"
-                } catch {
-                    $errorRecord = [System.Management.Automation.ErrorRecord]::new(
-                        [System.IO.IOException]::new("Failed to remove source file '$resolvedPath': $_"),
-                        'SourceFileRemovalFailed',
-                        [System.Management.Automation.ErrorCategory]::WriteError,
-                        $resolvedPath
-                    )
-                    $PSCmdlet.WriteError($errorRecord)
+                # Check if we should process (WhatIf support)
+                if ($PSCmdlet.ShouldProcess($resolvedPath, "Remove source file")) {
+                    try {
+                        Write-Verbose "Removing source file: '$resolvedPath'"
+                        Remove-Item -Path $resolvedPath -Force -ErrorAction Stop
+                        Write-Verbose "Successfully removed source file: '$resolvedPath'"
+                    } catch {
+                        $errorRecord = [System.Management.Automation.ErrorRecord]::new(
+                            [System.IO.IOException]::new("Failed to remove source file '$resolvedPath': $_"),
+                            'SourceFileRemovalFailed',
+                            [System.Management.Automation.ErrorCategory]::WriteError,
+                            $resolvedPath
+                        )
+                        $PSCmdlet.WriteError($errorRecord)
+                    }
                 }
             }
 
