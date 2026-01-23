@@ -325,7 +325,7 @@
                 Write-Verbose "Header validation skipped for: '$resolvedPath'"
             } else {
                 Write-Verbose "Validating DNS debug log header for: '$resolvedPath'"
-                $skipLines = Test-DnsDebugLogHeader -FilePath $resolvedPath
+                $skipLines = Test-DnsDebugLogHeader -Path $resolvedPath
                 if ($skipLines -eq 0) {
                     $errorRecord = [System.Management.Automation.ErrorRecord]::new(
                         [System.FormatException]::new("File is not a valid DNS Server debug log: '$resolvedPath'. The file header does not match the expected DNS debug log format. Use -SkipHeaderValidation to bypass this check."),

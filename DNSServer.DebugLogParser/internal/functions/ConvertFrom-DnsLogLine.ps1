@@ -23,6 +23,7 @@
         Version: 1.0.0
         Author: Andi Bellstedt
         Date: 2026-01-23
+
     #>
     [CmdletBinding()]
     [OutputType([hashtable])]
@@ -53,27 +54,37 @@
         }
 
         # Extract timestamp
-        $dateStr = "$($parts[0]) $($parts[1]) $($parts[2])"
+        $dateStr = "$($parts[0]) $($parts[1])"
         $timestamp = $null
         try {
-            $timestamp = [datetime]::ParseExact($dateStr, 'M/d/yyyy h:mm:ss tt', [System.Globalization.CultureInfo]::InvariantCulture)
+            # Try German format first: DD.MM.YYYY HH:MM:SS
+            $timestamp = [datetime]::ParseExact($dateStr, 'dd.MM.yyyy HH:mm:ss', [System.Globalization.CultureInfo]::InvariantCulture)
         } catch {
-            # If parse fails, try alternate format
+            # If parse fails, try US format with AM/PM: M/d/yyyy h:mm:ss tt
             try {
-                $timestamp = [datetime]::Parse($dateStr)
+                $dateStr = "$($parts[0]) $($parts[1]) $($parts[2])"
+                $timestamp = [datetime]::ParseExact($dateStr, 'M/d/yyyy h:mm:ss tt', [System.Globalization.CultureInfo]::InvariantCulture)
             } catch {
-                return $null
+                # Last resort: try generic parse
+                try {
+                    $timestamp = [datetime]::Parse($dateStr)
+                } catch {
+                    return $null
+                }
             }
         }
 
-        # Parse remaining fields
-        $threadId = $parts[3]
-        $context = $parts[4]
-        $packetId = if ($parts[5] -match '^\d+$') { $parts[5] } else { '' }
-        $protocol = $parts[6]
-        $direction = $parts[7]
-        $clientIp = $parts[8]
-        $port = $parts[9]
+        # Parse remaining fields (adjust indices based on date format)
+        # German format has 2 date fields (date + time), US format has 3 (date + time + AM/PM)
+        $dateFieldCount = if ($parts[0] -match '^\d{2}\.\d{2}\.\d{4}$') { 2 } else { 3 }
+
+        $threadId = $parts[$dateFieldCount]
+        $context = $parts[$dateFieldCount + 1]
+        $packetId = $parts[$dateFieldCount + 2]
+        $protocol = $parts[$dateFieldCount + 3]
+        $direction = $parts[$dateFieldCount + 4]
+        $clientIp = $parts[$dateFieldCount + 5]
+        $port = $parts[$dateFieldCount + 6]
 
         # Find query type and domain
         $queryType = ''
@@ -81,7 +92,8 @@
         $flags = ''
 
         # Look for query type (A, AAAA, PTR, etc.) and domain
-        for ($i = 10; $i -lt $parts.Count; $i++) {
+        $startIndex = $dateFieldCount + 7
+        for ($i = $startIndex; $i -lt $parts.Count; $i++) {
             if ($parts[$i] -match '^\[.*\]$') {
                 $flags = $parts[$i]
             } elseif ($parts[$i] -match '^(A|AAAA|PTR|MX|NS|CNAME|SOA|TXT|SRV)$') {
