@@ -44,9 +44,9 @@ To help triage quickly, include:
 ### Sensitive Data Handling
 Do **not** include any of the following in reports or logs:
 
-- GitHub Personal Access Tokens (PATs), OAuth tokens, API keys
-- Credentials
-- Private repository URLs that reveal internal infrastructure
+- API keys, tokens, or credentials
+- DNS query data containing sensitive internal information
+- Client IP addresses or internal network topology details
 - Any personal data you are not authorized to share
 
 ---
@@ -86,6 +86,7 @@ Severity is determined by maintainers considering:
 - Vulnerabilities in **Windows DNS Server** itself
 - Vulnerabilities in **PowerShell** / the runtime
 - Issues in third-party analysis tools or databases where parsed data is imported
+- Issues in third-party services (e.g., GitHub) unless caused by DNSServer.DebugLogParser’s implementation
 - Social engineering, phishing, or physical attacks
 
 If a report is out of scope but relevant, we may still suggest mitigations or upstream reporting paths.
