@@ -511,7 +511,7 @@
                     $PSCmdlet.WriteError($errorRecord)
                     continue
                 }
-                Write-Verbose "Header validation successful - will skip $skipLines header lines"
+                Write-Verbose "Header validation successful ($skipLines header lines)"
             }
 
             # Calculate output path for this input file
@@ -528,7 +528,7 @@
             }
 
             Write-Verbose "Starting processing: '$resolvedPath' (Input culture for date parsing: $($InputCulture.Name) [$($InputCulture.DisplayName)])"
-            Write-Verbose "CSV delimiter: '$Delimiter' | Output type: $($OutputType)"
+            Write-Verbose "Output type: $($OutputType) | CSV delimiter: '$Delimiter'"
             Write-Verbose "Output path: '$currentOutputPath' (Output culture for date formatting: $($OutputCulture.Name) [$($OutputCulture.DisplayName)])"
 
             # Build header with specified delimiter (conditionally include ComputerName)
@@ -604,7 +604,7 @@
                                     $parsed.RemoteIP,
                                     $parsed.Xid,
                                     $(
-                                        if ($parsed.QueryResponse -eq 'R') { 'Response' } else { 'Query' }
+                                        if ($parsed.QueryResponse -eq 'R') { 'Response' } else { if ($parsed.Context -like "Packet") { 'Query' } }
                                     ),
                                     $(
                                         switch ($parsed.Opcode) {
@@ -641,7 +641,7 @@
                                     $parsed.RemoteIP,
                                     $parsed.Xid,
                                     $(
-                                        if ($parsed.QueryResponse -eq 'R') { 'Response' } else { 'Query' }
+                                        if ($parsed.QueryResponse -eq 'R') { 'Response' } else { if ($parsed.Context -like "Packet") { 'Query' } }
                                     ),
                                     $(
                                         switch ($parsed.Opcode) {
