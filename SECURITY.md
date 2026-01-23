@@ -36,8 +36,8 @@ To help triage quickly, include:
 - Affected versions (e.g., `1.0.0`)
 - Your environment:
   - PowerShell version (Windows PowerShell 5.1 / PowerShell 7+)
-  - OS
-  - Git version (if relevant)
+  - OS and version (e.g., Windows Server 2022)
+  - DNS Server version (if relevant)
 - Any relevant logs **with secrets removed**
 - Suggested remediation (optional)
 
