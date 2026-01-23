@@ -1,6 +1,6 @@
 ﻿<#
 This script wraps up the module, creating a finished artifact, ready to publish a repository such as the PS Gallery.
-Useres PSFramework.NuGet for interaction with the package management system.
+Uses PSFramework.NuGet for interaction with the package management system.
 
 Insert any build steps you may need to take before publishing it here.
 #>
