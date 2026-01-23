@@ -9,6 +9,9 @@
   * Benefit: Consistent output structure simplifies multi-server log consolidation and automated processing
   * Impact: Existing scripts that parse column positions or expect conditional column presence must be updated
 
+### Added
+* Context filtering to focus on specific log entry types (PACKET, EVENT, NOTE) via ContextFilter parameter
+
 ### Improved
 * Refactored comment-based help for Convert-DNSDebugLogFile for better clarity and conciseness
 * Updated parameter descriptions to be more informative and actionable
@@ -29,7 +32,6 @@
   * Header validation to ensure data integrity (can be bypassed if needed)
   * Optional automatic compression of output files (ZIP format)
   * Optional removal of source files after successful processing
-  * Context filtering to focus on specific log entry types (PACKET, EVENT, NOTE)
   * Culture-aware date parsing and formatting for international DNS servers
   * Optimized for large files (100MB+) using streaming I/O and efficient string operations
   * Compatible with PowerShell 5.1+ (Desktop and Core editions)
