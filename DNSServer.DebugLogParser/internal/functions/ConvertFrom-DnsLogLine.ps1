@@ -39,13 +39,13 @@
     .NOTES
         Internal function not exported from module.
 
-        Version:    1.1.0
+        Version:    1.1.0.1
         Author:     Andi Bellstedt
         Date:       2026-01-23
 
     #>
     [CmdletBinding()]
-    [OutputType([hashtable])]
+    [OutputType([PSCustomObject])]
     param(
         [string]
         $Line,
