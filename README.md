@@ -12,7 +12,7 @@ DNSServer.DebugLogParser transforms Windows DNS Server debug logs into structure
 - Parse all 16 fields from DNS debug logs (date, time, protocol, client IP, query type, response codes, etc.)
 - Generate structured CSV output with customizable delimiters
 - Create optional statistical summaries aggregating activity by client, protocol, and query type
-****- ComputerName column always included for consistent multi-server consolidation
+- ComputerName column always included for consistent multi-server consolidation
 - Process single files or batches via pipeline
 - High-performance parsing optimized for large files (100MB+)
 - Context filtering to focus on PACKET, EVENT, or NOTE entries
