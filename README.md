@@ -89,7 +89,7 @@ Convert-DNSDebugLogFile -InputFile "C:\Logs\dns.log" `
 Add a ComputerName value when consolidating logs from multiple DNS servers. The ComputerName column
 is always present in the output - if not specified, the column will be empty:
 
-```**powershell**
+```powershell
 # Add ComputerName value for multi-server analysis
 Convert-DNSDebugLogFile -InputFile "C:\Logs\dns01.log" `
     -ComputerName "DNS01" `
