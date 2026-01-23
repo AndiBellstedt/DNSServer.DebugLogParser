@@ -14,6 +14,7 @@ DNSServer.DebugLogParser transforms Windows DNS Server debug logs into structure
 - Create optional statistical summaries aggregating activity by client, protocol, and query type
 - Process single files or batches via pipeline
 - High-performance parsing optimized for large files (100MB+)
+- Support for internationalization with culture-aware date parsing and formatting
 - Optional automatic compression of output files to save disk space
 - Optional removal of source files after successful processing
 - Validates log file headers to ensure data integrity
@@ -165,6 +166,43 @@ Convert-DNSDebugLogFile -InputFile "C:\Logs\custom.log" `
 # Warning: May result in processing errors if file is not a valid DNS log
 ```
 
+#### International Date Formats (Culture Support)
+
+Handle DNS logs from servers with different regional settings:
+
+```powershell
+# Parse a log from a German Windows server (DD.MM.YYYY format)
+Convert-DNSDebugLogFile -InputFile "C:\Logs\dns-german.log" `
+    -InputCulture 'de-DE'
+
+# Parse a log from a Swedish Windows server (YYYY-MM-DD format)
+Convert-DNSDebugLogFile -InputFile "C:\Logs\dns-swedish.log" `
+    -InputCulture 'sv-SE'
+
+# Parse German log and output dates in US format for American systems
+Convert-DNSDebugLogFile -InputFile "C:\Logs\dns-german.log" `
+    -InputCulture 'de-DE' `
+    -OutputCulture 'en-US'
+
+# Output dates in ISO format (culture-invariant) for cross-platform compatibility
+Convert-DNSDebugLogFile -InputFile "C:\Logs\dns.log" `
+    -OutputCulture ([System.Globalization.CultureInfo]::InvariantCulture)
+
+# Process logs from multiple international servers
+$servers = @(
+    @{ Name = 'DNS-DE'; Culture = 'de-DE' },
+    @{ Name = 'DNS-US'; Culture = 'en-US' },
+    @{ Name = 'DNS-SE'; Culture = 'sv-SE' }
+)
+
+foreach ($server in $servers) {
+    Convert-DNSDebugLogFile -InputFile "C:\Logs\$($server.Name).log" `
+        -InputCulture $server.Culture `
+        -OutputCulture 'en-US' `
+        -ComputerName $server.Name
+}
+```
+
 ### Understanding the Output
 
 #### CSV Data File Fields
@@ -173,7 +211,7 @@ The parsed CSV contains 16 fields extracted from each DNS log entry:
 
 | Field        | Description                                                           | Example             |
 | ------------ | --------------------------------------------------------------------- | ------------------- |
-| DateTime     | Timestamp of the DNS query/response                                   | 2026-01-23 14:32:15 |
+| DateTime     | Timestamp of the DNS query/response (format depends on OutputCulture) | 2026-01-23 14:32:15 |
 | ThreadId     | DNS Server thread ID that processed the request                       | 0ABC                |
 | Context      | Internal context identifier                                           | PACKET              |
 | PacketId     | Internal packet identifier                                            | 0000012345678ABC    |
@@ -408,6 +446,33 @@ A: This module is specifically designed for DNS Server **debug logs** (text-base
 **Q: Will `-RemoveSourceFile` delete my active DNS log?**
 
 A: Yes, use with extreme caution! Stop DNS debug logging first, or work with archived copies. Never use `-RemoveSourceFile` on active log files that DNS Server is still writing to.
+
+**Q: How do I process logs from a DNS server with different regional settings?**
+
+A: Use the `-InputCulture` parameter to specify the culture of the source server. DNS debug logs use the local date format:
+
+```powershell
+# German server (DD.MM.YYYY format)
+Convert-DNSDebugLogFile -InputFile "C:\Logs\dns.log" -InputCulture 'de-DE'
+
+# Swedish server (YYYY-MM-DD format)
+Convert-DNSDebugLogFile -InputFile "C:\Logs\dns.log" -InputCulture 'sv-SE'
+
+# US server (MM/DD/YYYY format)
+Convert-DNSDebugLogFile -InputFile "C:\Logs\dns.log" -InputCulture 'en-US'
+```
+
+**Q: Can I control the date format in the output CSV?**
+
+A: Yes, use the `-OutputCulture` parameter:
+
+```powershell
+# Output in US format
+Convert-DNSDebugLogFile -InputFile "C:\Logs\dns.log" -OutputCulture 'en-US'
+
+# Output in ISO format (YYYY-MM-DD) for maximum compatibility
+Convert-DNSDebugLogFile -InputFile "C:\Logs\dns.log" -OutputCulture ([System.Globalization.CultureInfo]::InvariantCulture)
+```
 
 ### Troubleshooting
 

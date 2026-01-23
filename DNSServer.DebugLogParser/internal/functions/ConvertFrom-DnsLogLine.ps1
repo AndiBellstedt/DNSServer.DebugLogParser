@@ -7,8 +7,15 @@
         Internal helper function that parses a DNS Server debug log line and extracts
         structured information including timestamp, protocol, query type, client IP, and domain.
 
+        Supports culture-aware date/time parsing to handle DNS debug logs from servers
+        with different regional settings (e.g., German DD.MM.YYYY, US MM/DD/YYYY, Swedish YYYY-MM-DD).
+
     .PARAMETER Line
         The log line string to parse.
+
+    .PARAMETER Culture
+        The culture to use for parsing date/time values. Defaults to CurrentCulture.
+        DNS Server debug logs use the date format of the Windows locale on the source server.
 
     .EXAMPLE
         PS C:\> ConvertFrom-DnsLogLine -Line "20.01.2026 23:00:18 0FE0 PACKET  000002C5307CFCD0 UDP Rcv 10.0.0.2        ede1   Q [0001   D   NOERROR] A      (4)ocsp(8)digicert(3)com(0)"
@@ -32,7 +39,7 @@
     .NOTES
         Internal function not exported from module.
 
-        Version:    1.0.0
+        Version:    1.1.0
         Author:     Andi Bellstedt
         Date:       2026-01-23
 
@@ -41,7 +48,10 @@
     [OutputType([hashtable])]
     param(
         [string]
-        $Line
+        $Line,
+
+        [System.Globalization.CultureInfo]
+        $Culture = [System.Globalization.CultureInfo]::CurrentCulture
     )
 
     # Skip empty lines
@@ -55,34 +65,60 @@
     }
 
     # Parse fixed-position fields for maximum performance
-    # Format: "13.01.2026 23:00:16 0FE0 PACKET  000002C53117D990 UDP Rcv 10.10.31.11     c049   Q [0001   D   NOERROR] A      (3)odc..."
+    # The date/time portion occupies positions 0-18 or 0-19 depending on format
+    # Supported formats (based on Windows locale):
+    #   DD.MM.YYYY HH:MM:SS (German, position 20)
+    #   DD/MM/YYYY HH:MM:SS (UK/Austrian, position 20)
+    #   YYYY-MM-DD HH:MM:SS (Swedish/ISO, position 20)
+    #   M/D/YYYY H:MM:SS or MM/DD/YYYY HH:MM:SS (US, variable length)
 
-    # Field 1 & 2: Date and Time (positions 0-18, format: DD.MM.YYYY HH:MM:SS)
-    $dateStr = $Line.Substring(0, 10)    # DD.MM.YYYY
-    $timeStr = $Line.Substring(11, 8)    # HH:MM:SS
-
-    # Parse DateTime - German format DD.MM.YYYY
-    $dateTime = $null
-    $dateParts = $dateStr.Split('.')
-    if ($dateParts.Count -eq 3) {
-        try {
-            $dateTime = [datetime]::new(
-                [int]$dateParts[2],  # Year
-                [int]$dateParts[1],  # Month
-                [int]$dateParts[0],  # Day
-                [int]$timeStr.Substring(0, 2),   # Hour
-                [int]$timeStr.Substring(3, 2),   # Minute
-                [int]$timeStr.Substring(6, 2)    # Second
-            )
-        } catch {
-            return $null
-        }
-    } else {
+    # Find the first whitespace after position 8 to locate the date/time boundary
+    # The time portion always ends before the thread ID (hex like 0FE0)
+    $firstSpace = $Line.IndexOf(' ')
+    if ($firstSpace -lt 6 -or $firstSpace -gt 12) {
         return $null
     }
 
-    # Remaining part after datetime (position 20+)
-    $remaining = $Line.Substring(20).TrimStart()
+    # Extract date string
+    $dateStr = $Line.Substring(0, $firstSpace)
+
+    # Find second space to get time portion
+    $secondSpace = $Line.IndexOf(' ', $firstSpace + 1)
+    if ($secondSpace -eq -1 -or $secondSpace - $firstSpace -lt 6) {
+        return $null
+    }
+
+    $timeStr = $Line.Substring($firstSpace + 1, $secondSpace - $firstSpace - 1)
+
+    # Track where the datetime portion ends for parsing the remaining fields
+    $dateTimeEndPosition = $secondSpace
+
+    # Check for AM/PM designator (12-hour clock format, e.g., en-US culture)
+    # AM/PM follows immediately after the time with a space separator
+    $thirdSpace = $Line.IndexOf(' ', $secondSpace + 1)
+    if ($thirdSpace -ne -1) {
+        $potentialAmPm = $Line.Substring($secondSpace + 1, $thirdSpace - $secondSpace - 1)
+        if ($potentialAmPm -eq 'AM' -or $potentialAmPm -eq 'PM') {
+            $timeStr = "$($timeStr) $($potentialAmPm)"
+            $dateTimeEndPosition = $thirdSpace
+        }
+    }
+
+    # Parse DateTime using culture-aware approach without regex
+    # Use TryParse with the specified culture for maximum compatibility
+    $dateTime = [datetime]::MinValue
+    $dateTimeStr = "$($dateStr) $($timeStr)"
+
+    # Try culture-specific parsing first (high performance path)
+    if (-not [datetime]::TryParse($dateTimeStr, $Culture.DateTimeFormat, [System.Globalization.DateTimeStyles]::None, [ref]$dateTime)) {
+        # Fallback: Try invariant culture for ISO format (YYYY-MM-DD)
+        if (-not [datetime]::TryParse($dateTimeStr, [System.Globalization.CultureInfo]::InvariantCulture.DateTimeFormat, [System.Globalization.DateTimeStyles]::None, [ref]$dateTime)) {
+            return $null
+        }
+    }
+
+    # Remaining part after datetime (uses correct position whether AM/PM was present or not)
+    $remaining = $Line.Substring($dateTimeEndPosition).TrimStart()
 
     # Split on whitespace for remaining fields
     $parts = $remaining.Split([char[]]@(' ', "`t"), [StringSplitOptions]::RemoveEmptyEntries)

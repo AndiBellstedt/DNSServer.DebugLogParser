@@ -67,8 +67,10 @@
         if (-not $lines[0].StartsWith('DNS Server log file creation at ')) {
             return 0
         }
-        # Quick validation: line should be at least 47 chars ("DNS Server log file creation at DD.MM.YYYY HH:MM:SS")
-        if ($lines[0].Length -lt 47) {
+        # Quick validation: line should be at least 43 chars to account for different date formats
+        # Shortest format: "DNS Server log file creation at M/D/YYYY H:MM:SS" (43 chars)
+        # Longest format: "DNS Server log file creation at DD.MM.YYYY HH:MM:SS" (51 chars)
+        if ($lines[0].Length -lt 43) {
             return 0
         }
 

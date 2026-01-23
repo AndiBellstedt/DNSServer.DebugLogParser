@@ -115,6 +115,40 @@
 
         Compatible with PowerShell 5.1+ and Windows Server 2016+.
 
+    .PARAMETER InputCulture
+        Specifies the culture to use for parsing date/time values in the DNS debug log.
+
+        DNS Server debug logs use the date format of the Windows locale on the server where the log
+        was generated. This parameter allows parsing logs from servers with different regional settings.
+
+        Default is the current culture ([System.Globalization.CultureInfo]::CurrentCulture).
+
+        Common culture values:
+        - 'de-DE' or 'de-AT': German format (DD.MM.YYYY or DD/MM/YYYY)
+        - 'en-US': US format (MM/DD/YYYY)
+        - 'en-GB': UK format (DD/MM/YYYY)
+        - 'sv-SE': Swedish/ISO format (YYYY-MM-DD)
+
+        Example: -InputCulture 'de-DE' for logs from a German Windows server.
+        Example: -InputCulture ([System.Globalization.CultureInfo]::GetCultureInfo('sv-SE')) for Swedish logs.
+
+    .PARAMETER OutputCulture
+        Specifies the culture to use for formatting date/time values in the output CSV files.
+
+        This parameter controls how DateTime values are written to the CSV output. This is useful
+        when the CSV files will be consumed by applications or systems with specific regional settings.
+
+        Default is the current culture ([System.Globalization.CultureInfo]::CurrentCulture).
+
+        Common culture values:
+        - 'en-US': US format (MM/DD/YYYY)
+        - 'de-DE': German format (DD.MM.YYYY)
+        - 'en-GB': UK format (DD/MM/YYYY)
+        - 'sv-SE': Swedish/ISO format (YYYY-MM-DD)
+
+        Example: -OutputCulture 'en-US' to format dates for US systems.
+        Example: -OutputCulture ([System.Globalization.CultureInfo]::InvariantCulture) for ISO format.
+
     .EXAMPLE
         PS C:\> .\Convert-DnsDebugLogFile.ps1 -InputFile "C:\Logs\dns.log"
 
@@ -176,6 +210,30 @@
         Converts the log file and removes the source after successful processing.
         Verbose output confirms file removal. Use with caution as source files are permanently deleted.
 
+    .EXAMPLE
+        PS C:\> .\Convert-DnsDebugLogFile.ps1 -InputFile "C:\Logs\dns.log" -InputCulture 'de-DE'
+
+        Converts a DNS debug log from a German Windows server.
+        Use this when the log file originates from a server with different regional settings.
+
+    .EXAMPLE
+        PS C:\> .\Convert-DnsDebugLogFile.ps1 -InputFile "C:\Logs\dns.log" -InputCulture ([System.Globalization.CultureInfo]::GetCultureInfo('sv-SE'))
+
+        Converts a DNS debug log from a Swedish Windows server using ISO date format (YYYY-MM-DD).
+        Useful for processing logs from servers with different locale settings.
+
+    .EXAMPLE
+        PS C:\> .\Convert-DnsDebugLogFile.ps1 -InputFile "C:\Logs\dns.log" -InputCulture 'de-DE' -OutputCulture 'en-US'
+
+        Converts a DNS debug log from a German Windows server and formats output dates for US systems.
+        Useful for processing logs from international servers for consumption by US-based systems.
+
+    .EXAMPLE
+        PS C:\> .\Convert-DnsDebugLogFile.ps1 -InputFile "C:\Logs\dns.log" -OutputCulture ([System.Globalization.CultureInfo]::InvariantCulture)
+
+        Converts a DNS debug log and formats output dates using ISO 8601 format (YYYY-MM-DD).
+        Ideal for cross-platform compatibility or data interchange scenarios.
+
     .NOTES
         Version:    1.2.0.0
         Author:     Andreas Bellstedt, Copilot
@@ -227,7 +285,15 @@
 
         [Parameter()]
         [switch]
-        $CompressOutput
+        $CompressOutput,
+
+        [Parameter()]
+        [System.Globalization.CultureInfo]
+        $InputCulture = [System.Globalization.CultureInfo]::CurrentCulture,
+
+        [Parameter()]
+        [System.Globalization.CultureInfo]
+        $OutputCulture = [System.Globalization.CultureInfo]::CurrentCulture
     )
 
     begin {
@@ -355,7 +421,9 @@
             Write-Verbose "Starting processing: '$resolvedPath'"
             Write-Verbose "Output path: '$currentOutputPath'"
             Write-Verbose "CSV delimiter: '$Delimiter'"
-            Write-Verbose "Output type: $OutputType"
+            Write-Verbose "Output type: $($OutputType)"
+            Write-Verbose "Input culture for date parsing: $($InputCulture.Name) ($($InputCulture.DisplayName))"
+            Write-Verbose "Output culture for date formatting: $($OutputCulture.Name) ($($OutputCulture.DisplayName))"
 
             # Build header with specified delimiter (conditionally include ComputerName)
             $includeComputerName = -not [string]::IsNullOrEmpty($ComputerName)
@@ -380,6 +448,10 @@
             # Determine if we need to write CSV data
             $writeCsvData = ($OutputType -eq 'CSV' -or $OutputType -eq 'Both')
 
+            # Pre-build date/time format string for OutputCulture (performance optimization)
+            # Use the culture's short date and long time patterns for consistent output
+            $outputDateTimeFormat = $OutputCulture.DateTimeFormat.ShortDatePattern + ' ' + $OutputCulture.DateTimeFormat.LongTimePattern
+
             try {
                 $reader = [System.IO.StreamReader]::new($resolvedPath, [System.Text.Encoding]::UTF8, $true, 65536)
 
@@ -402,13 +474,16 @@
                     $line = $reader.ReadLine()
                     $lineCount++
 
-                    $parsed = ConvertFrom-DnsLogLine -Line $line
+                    $parsed = ConvertFrom-DnsLogLine -Line $line -Culture $InputCulture
                     if ($null -ne $parsed) {
                         # Build CSV line manually for performance (avoiding Export-Csv overhead) - only if needed
                         if ($writeCsvData) {
+                            # Format DateTime using OutputCulture for culture-aware output
+                            $formattedDateTime = $parsed.DateTime.ToString($outputDateTimeFormat, $OutputCulture)
+
                             if ($includeComputerName) {
-                                $csvLine = ($ComputerName + $Delimiter + '{0:yyyy-MM-dd HH:mm:ss}' + $Delimiter + '{1}' + $Delimiter + '{2}' + $Delimiter + '{3}' + $Delimiter + '{4}' + $Delimiter + '{5}' + $Delimiter + '{6}' + $Delimiter + '{7}' + $Delimiter + '{8}' + $Delimiter + '{9}' + $Delimiter + '{10}' + $Delimiter + '{11}' + $Delimiter + '{12}' + $Delimiter + '{13}' + $Delimiter + '"{14}"') -f @(
-                                    $parsed.DateTime,
+                                $csvLine = ($ComputerName + $Delimiter + '{0}' + $Delimiter + '{1}' + $Delimiter + '{2}' + $Delimiter + '{3}' + $Delimiter + '{4}' + $Delimiter + '{5}' + $Delimiter + '{6}' + $Delimiter + '{7}' + $Delimiter + '{8}' + $Delimiter + '{9}' + $Delimiter + '{10}' + $Delimiter + '{11}' + $Delimiter + '{12}' + $Delimiter + '{13}' + $Delimiter + '"{14}"') -f @(
+                                    $formattedDateTime,
                                     $parsed.ThreadId,
                                     $parsed.Context,
                                     $parsed.PacketId,
@@ -443,8 +518,8 @@
                                     $parsed.QuestionName
                                 )
                             } else {
-                                $csvLine = ('{0:yyyy-MM-dd HH:mm:ss}' + $Delimiter + '{1}' + $Delimiter + '{2}' + $Delimiter + '{3}' + $Delimiter + '{4}' + $Delimiter + '{5}' + $Delimiter + '{6}' + $Delimiter + '{7}' + $Delimiter + '{8}' + $Delimiter + '{9}' + $Delimiter + '{10}' + $Delimiter + '{11}' + $Delimiter + '{12}' + $Delimiter + '{13}' + $Delimiter + '"{14}"') -f @(
-                                    $parsed.DateTime,
+                                $csvLine = ('{0}' + $Delimiter + '{1}' + $Delimiter + '{2}' + $Delimiter + '{3}' + $Delimiter + '{4}' + $Delimiter + '{5}' + $Delimiter + '{6}' + $Delimiter + '{7}' + $Delimiter + '{8}' + $Delimiter + '{9}' + $Delimiter + '{10}' + $Delimiter + '{11}' + $Delimiter + '{12}' + $Delimiter + '{13}' + $Delimiter + '"{14}"') -f @(
+                                    $formattedDateTime,
                                     $parsed.ThreadId,
                                     $parsed.Context,
                                     $parsed.PacketId,
@@ -530,10 +605,12 @@
                         # Write statistics data
                         foreach ($kvp in $statistics.GetEnumerator()) {
                             $keyParts = $kvp.Key.Split('|')
+                            $dateMinFormatted = $kvp.Value[1].ToString($outputDateTimeFormat, $OutputCulture)
+                            $dateMaxFormatted = $kvp.Value[2].ToString($outputDateTimeFormat, $OutputCulture)
                             if ($includeComputerName) {
-                                $statLine = $ComputerName + $Delimiter + $keyParts[0] + $Delimiter + $keyParts[1] + $Delimiter + $keyParts[2] + $Delimiter + $keyParts[3] + $Delimiter + $kvp.Value[0].ToString() + $Delimiter + $kvp.Value[1].ToString('yyyy-MM-dd HH:mm:ss') + $Delimiter + $kvp.Value[2].ToString('yyyy-MM-dd HH:mm:ss')
+                                $statLine = $ComputerName + $Delimiter + $keyParts[0] + $Delimiter + $keyParts[1] + $Delimiter + $keyParts[2] + $Delimiter + $keyParts[3] + $Delimiter + $kvp.Value[0].ToString() + $Delimiter + $dateMinFormatted + $Delimiter + $dateMaxFormatted
                             } else {
-                                $statLine = $keyParts[0] + $Delimiter + $keyParts[1] + $Delimiter + $keyParts[2] + $Delimiter + $keyParts[3] + $Delimiter + $kvp.Value[0].ToString() + $Delimiter + $kvp.Value[1].ToString('yyyy-MM-dd HH:mm:ss') + $Delimiter + $kvp.Value[2].ToString('yyyy-MM-dd HH:mm:ss')
+                                $statLine = $keyParts[0] + $Delimiter + $keyParts[1] + $Delimiter + $keyParts[2] + $Delimiter + $keyParts[3] + $Delimiter + $kvp.Value[0].ToString() + $Delimiter + $dateMinFormatted + $Delimiter + $dateMaxFormatted
                             }
                             $statWriter.WriteLine($statLine)
                         }

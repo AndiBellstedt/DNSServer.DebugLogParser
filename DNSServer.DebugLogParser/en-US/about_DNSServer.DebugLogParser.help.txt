@@ -81,6 +81,8 @@ LONG DESCRIPTION
     - Supports batch processing via PowerShell pipeline
     - Optionally compresses output files to save disk space
     - Can automatically remove source files after successful processing
+    - Culture-aware date parsing for international DNS server logs
+    - Culture-aware date formatting for international output requirements
 
   Output Formats
 
@@ -146,6 +148,24 @@ LONG DESCRIPTION
     - CSV data file only (default)
     - Statistics file only
     - Both data and statistics files
+
+    InputCulture
+    Specify the culture/locale of the DNS server where the log was generated.
+    DNS debug logs use the local date format of the Windows server, which
+    varies by region:
+    - German (de-DE): DD.MM.YYYY HH:MM:SS
+    - US English (en-US): M/D/YYYY H:MM:SS AM/PM
+    - Swedish (sv-SE): YYYY-MM-DD HH:MM:SS
+    - UK English (en-GB): DD/MM/YYYY HH:MM:SS
+    Use this parameter when processing logs from servers with different
+    regional settings than your local machine.
+
+    OutputCulture
+    Specify the culture/locale for formatting dates in the output CSV files.
+    This controls how DateTime values are written to the CSV, allowing you to
+    match the regional settings of the systems or applications that will
+    consume the data. Use InvariantCulture for ISO format (YYYY-MM-DD) which
+    provides maximum cross-platform compatibility.
 
     Compression
     Automatically compress output CSV files into ZIP archives to save disk
@@ -311,7 +331,28 @@ EXAMPLES
 
     The output uses comma as the CSV delimiter instead of semicolon.
 
-  Example 8: Statistics Only
+  Example 8: International Log Processing
+
+    Process DNS logs from servers with different regional date formats:
+
+        # Parse a log from a German Windows server (DD.MM.YYYY format)
+        PS C:\> Convert-DNSDebugLogFile -InputFile "C:\Logs\dns-german.log" `
+                    -InputCulture 'de-DE'
+
+        # Parse a Swedish log (YYYY-MM-DD) and output in US format (MM/DD/YYYY)
+        PS C:\> Convert-DNSDebugLogFile -InputFile "C:\Logs\dns-swedish.log" `
+                    -InputCulture 'sv-SE' `
+                    -OutputCulture 'en-US'
+
+        # Output dates in ISO format for cross-platform compatibility
+        PS C:\> Convert-DNSDebugLogFile -InputFile "C:\Logs\dns.log" `
+                    -OutputCulture ([System.Globalization.CultureInfo]::InvariantCulture)
+
+    The InputCulture parameter specifies how to parse dates from the source
+    log file. The OutputCulture parameter controls how dates are formatted
+    in the output CSV files.
+
+  Example 9: Statistics Only
 
     Generate only statistical summary without detailed data:
 
@@ -321,7 +362,7 @@ EXAMPLES
     This creates only C:\Logs\dns_statistic.csv with aggregated metrics,
     skipping the detailed data file.
 
-  Example 9: Scheduled Task Example
+  Example 10: Scheduled Task Example
 
     Create a scheduled task to process logs nightly:
 
@@ -340,7 +381,7 @@ EXAMPLES
     This creates a scheduled task that runs nightly at 2 AM to process DNS
     logs, compress the output, and clean up the source files.
 
-  Example 10: Advanced Security Analysis Workflow
+  Example 11: Advanced Security Analysis Workflow
 
     Process logs and import into SQL Server for security analysis:
 
