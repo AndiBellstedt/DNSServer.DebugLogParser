@@ -1,0 +1,439 @@
+﻿TOPIC
+    about_DNSServer.DebugLogParser
+
+SHORT DESCRIPTION
+    DNSServer.DebugLogParser is a PowerShell module that transforms Windows DNS
+    Server debug log files into structured, analyzable CSV data for security
+    analysis, performance monitoring, troubleshooting, and compliance reporting.
+
+LONG DESCRIPTION
+    Windows DNS Server generates debug log files that contain detailed
+    information about DNS queries and responses. While these logs are valuable
+    for troubleshooting and security analysis, they are stored in a
+    human-readable text format that is difficult to analyze at scale.
+
+    DNSServer.DebugLogParser solves this problem by parsing these debug logs
+    and converting them into structured CSV format, making the data accessible
+    to analysis tools like Excel, Power BI, SQL databases, and SIEM systems.
+
+  What is a DNS Debug Log?
+
+    DNS debug logging is a feature of Windows DNS Server that records detailed
+    information about DNS operations. When enabled, the DNS Server writes log
+    entries to a text file (typically dns.log) in the DNS Server's directory.
+
+    Each log entry contains up to 16 fields including:
+    - Date and time of the query
+    - Protocol used (UDP or TCP)
+    - Direction (Send or Receive)
+    - Client IP address
+    - Query type (A, AAAA, MX, PTR, etc.)
+    - Domain name queried
+    - Response code (NOERROR, NXDOMAIN, etc.)
+    - Query flags and options
+    - IP address in response (for successful queries)
+    - Port numbers and additional technical details
+
+  Why Parse DNS Debug Logs?
+
+    DNS logs are critical for:
+
+    Security Analysis
+    - Detect DNS tunneling and data exfiltration attempts
+    - Identify domains associated with malware and command-and-control servers
+    - Track suspicious query patterns that may indicate compromised systems
+    - Monitor for DNS amplification attacks
+    - Investigate security incidents and trace attacker activity
+
+    Performance Monitoring
+    - Identify high-volume query sources
+    - Analyze query types and patterns to optimize DNS infrastructure
+    - Detect configuration issues causing excessive queries
+    - Track response times and success rates
+    - Monitor DNS server load and capacity
+
+    Troubleshooting
+    - Diagnose name resolution failures
+    - Identify misconfigured clients or applications
+    - Track down the source of problematic queries
+    - Verify proper DNS configuration and zone transfers
+
+    Compliance and Auditing
+    - Meet regulatory requirements for logging and retention
+    - Document network activity for audit trails
+    - Generate reports for management and compliance officers
+    - Demonstrate due diligence in security monitoring
+
+  How DNSServer.DebugLogParser Works
+
+    The module uses high-performance streaming I/O to process log files of any
+    size efficiently. It reads the DNS debug log line by line, parses each
+    field according to the DNS Server's log format, and writes structured CSV
+    output.
+
+    Key capabilities:
+    - Parses all 16 fields from DNS debug log entries
+    - Handles multiple DNS Server versions (2012 R2 through 2025)
+    - Supports both PowerShell Desktop (5.1+) and Core (7.x)
+    - Processes files of any size (tested with 100MB+ files)
+    - Validates log file headers to ensure data integrity
+    - Generates optional statistical summaries
+    - Supports batch processing via PowerShell pipeline
+    - Optionally compresses output files to save disk space
+    - Can automatically remove source files after successful processing
+
+  Output Formats
+
+    DNSServer.DebugLogParser can generate two types of output:
+
+    CSV Data File
+    Contains all parsed log entries with the following columns:
+    - Date: Date of the DNS query/response
+    - Time: Time of the DNS query/response
+    - ThreadID: Internal DNS server thread identifier
+    - Context: Operation context (typically empty)
+    - PacketID: DNS packet identifier
+    - Protocol: UDP or TCP
+    - Direction: SEND (response) or RECV (query)
+    - RemoteIP: Client IP address
+    - XID: Transaction ID
+    - QueryFlag: Query flags (R, Q, etc.)
+    - QueryType: DNS record type (A, AAAA, MX, PTR, etc.)
+    - QueryName: Domain name queried
+    - ResponseCode: NOERROR, NXDOMAIN, SERVFAIL, etc.
+    - ResponseFlag: Response flags
+    - ResponseInfo: Additional response information
+    - ResponseIP: IP address in the response (if applicable)
+    - ComputerName: Source server name (optional column)
+
+    Statistics File (Optional)
+    Provides aggregated metrics including:
+    - Query count by client IP address
+    - Query count by protocol (UDP/TCP)
+    - Query count by query type (A, AAAA, MX, etc.)
+    - Top queried domains
+    - Response code distribution
+
+  Performance Optimization
+
+    The module is optimized for processing large log files:
+
+    - Uses StreamReader with 64KB buffers for efficient file reading
+    - Uses StreamWriter with 64KB buffers for efficient file writing
+    - Employs string operations (.Substring, .IndexOf) instead of regex
+    - Manually constructs CSV to avoid Export-Csv overhead
+    - Uses hashtables for fast statistical aggregation
+    - Processes files in a single pass to minimize I/O operations
+
+    These optimizations enable processing of 100MB+ log files in minutes on
+    standard server hardware.
+
+  Customization Options
+
+    The module provides several parameters to customize behavior:
+
+    Delimiter
+    Change the CSV delimiter from the default semicolon (;) to comma, tab,
+    or any other character. This ensures compatibility with different analysis
+    tools and regional settings.
+
+    ComputerName
+    Add a ComputerName column to the output, useful when consolidating logs
+    from multiple DNS servers into a single dataset for centralized analysis.
+
+    Output Type
+    Choose to generate:
+    - CSV data file only (default)
+    - Statistics file only
+    - Both data and statistics files
+
+    Compression
+    Automatically compress output CSV files into ZIP archives to save disk
+    space. CSV files compress extremely well (often 90%+ reduction), making
+    this ideal for long-term storage or transmission.
+
+    Source File Removal
+    Automatically delete source log files after successful conversion. This
+    helps manage disk space when processing logs on a schedule.
+
+    Header Validation
+    The module validates that input files are valid DNS debug logs by checking
+    the header. This can be bypassed if needed for unusual log formats.
+
+  Integration with Analysis Tools
+
+    The CSV output integrates seamlessly with various tools:
+
+    Microsoft Excel
+    Open CSV files directly for ad-hoc analysis, pivot tables, and charts.
+    Use the semicolon delimiter for automatic column separation in regions
+    that use comma as decimal separator.
+
+    Power BI
+    Import CSV files to create interactive dashboards showing DNS activity,
+    top clients, query trends, and security insights.
+
+    SQL Databases
+    Bulk load CSV files into SQL Server, PostgreSQL, or other databases for
+    long-term storage and advanced querying using SQL.
+
+    SIEM Systems
+    Import parsed logs into Splunk, Elastic, or other SIEM platforms for
+    correlation with other security events and automated alerting.
+
+    Python/R/Data Science Tools
+    Use the structured CSV data for machine learning, anomaly detection, or
+    custom analytics using pandas, scikit-learn, or other data science
+    libraries.
+
+  Best Practices
+
+    When using DNSServer.DebugLogParser in production:
+
+    1. Schedule Regular Processing
+       Use Task Scheduler to automatically convert new log files on a daily
+       or weekly basis. This ensures logs are always available in analyzable
+       format.
+
+    2. Rotate Logs Appropriately
+       DNS debug logs can grow large quickly. Configure DNS Server to rotate
+       logs when they reach a manageable size (e.g., 100MB).
+
+    3. Validate Output
+       Always verify the first few converted files to ensure the output meets
+       your needs before automating the process.
+
+    4. Plan Storage Requirements
+       Even with compression, converted logs require storage. Plan for
+       adequate disk space based on your DNS query volume and retention
+       requirements.
+
+    5. Secure Sensitive Data
+       DNS logs may contain sensitive information about internal network
+       structure and user activity. Store converted files securely with
+       appropriate access controls.
+
+    6. Document Your Workflow
+       Document how you process logs, where files are stored, and what
+       analysis you perform. This helps with knowledge transfer and audit
+       requirements.
+
+    7. Test with Sample Files
+       Before processing critical logs, test the conversion process with
+       sample files to verify parameters and output format.
+
+    8. Monitor for Errors
+       When running automated conversions, monitor for errors such as
+       corrupted log files or insufficient disk space.
+
+  Licensing and Support
+
+    DNSServer.DebugLogParser is released under the MIT License, allowing free
+    use, modification, and distribution. The source code is available on
+    GitHub at:
+
+        https://github.com/AndiBellstedt/DNSServer.DebugLogParser
+
+    Community support is available through GitHub Issues. Contributions,
+    bug reports, and feature requests are welcome.
+
+EXAMPLES
+  Example 1: Basic Log Conversion
+
+    Convert a DNS debug log file to CSV format using default settings:
+
+        PS C:\> Convert-DNSDebugLogFile -InputFile "C:\Windows\System32\dns\dns.log"
+
+    This creates C:\Windows\System32\dns\dns.csv with semicolon-delimited
+    data containing all parsed log entries.
+
+  Example 2: Custom Output Location
+
+    Convert a log and save the output to a specific directory:
+
+        PS C:\> Convert-DNSDebugLogFile -InputFile "C:\Logs\dns.log" `
+                    -OutputFile "D:\Processed\dns_data.csv"
+
+    The converted data is saved to D:\Processed\dns_data.csv instead of the
+    default location.
+
+  Example 3: Generate Statistics
+
+    Create both detailed data and aggregated statistics:
+
+        PS C:\> Convert-DNSDebugLogFile -InputFile "C:\Logs\dns.log" `
+                    -OutputType Both
+
+    This creates two files:
+    - C:\Logs\dns.csv (detailed query data)
+    - C:\Logs\dns_statistic.csv (aggregated metrics)
+
+  Example 4: Multi-Server Log Consolidation
+
+    Process logs from multiple DNS servers and add a ComputerName column:
+
+        PS C:\> Get-ChildItem "\\DNSServer01\C$\DNS\dns*.log" |
+                    Convert-DNSDebugLogFile -ComputerName "DNSServer01" `
+                        -OutputFile "C:\Analysis\Consolidated.csv"
+
+        PS C:\> Get-ChildItem "\\DNSServer02\C$\DNS\dns*.log" |
+                    Convert-DNSDebugLogFile -ComputerName "DNSServer02" `
+                        -OutputFile "C:\Analysis\Consolidated.csv" -Append
+
+    This consolidates logs from multiple servers into a single CSV file with
+    a ComputerName column identifying the source server.
+
+  Example 5: Batch Processing with Pipeline
+
+    Process all DNS log files in a directory:
+
+        PS C:\> Get-ChildItem "C:\DNSLogs\*.log" | Convert-DNSDebugLogFile
+
+    Each log file is converted to a corresponding CSV file in the same
+    directory.
+
+  Example 6: Automated Processing with Compression
+
+    Convert logs, compress the output, and remove source files to save space:
+
+        PS C:\> Convert-DNSDebugLogFile -InputFile "C:\Logs\dns.log" `
+                    -CompressOutput -RemoveSourceFile
+
+    This creates C:\Logs\dns.zip containing the CSV data, then removes both
+    dns.csv and dns.log to free disk space.
+
+  Example 7: Custom Delimiter for Excel
+
+    Generate CSV with comma delimiter for regions using comma as decimal:
+
+        PS C:\> Convert-DNSDebugLogFile -InputFile "C:\Logs\dns.log" `
+                    -Delimiter ","
+
+    The output uses comma as the CSV delimiter instead of semicolon.
+
+  Example 8: Statistics Only
+
+    Generate only statistical summary without detailed data:
+
+        PS C:\> Convert-DNSDebugLogFile -InputFile "C:\Logs\dns.log" `
+                    -OutputType StatisticOnly
+
+    This creates only C:\Logs\dns_statistic.csv with aggregated metrics,
+    skipping the detailed data file.
+
+  Example 9: Scheduled Task Example
+
+    Create a scheduled task to process logs nightly:
+
+        PS C:\> $Action = New-ScheduledTaskAction -Execute "PowerShell.exe" `
+                    -Argument "-NoProfile -Command `
+                    `"Import-Module DNSServer.DebugLogParser; `
+                    Convert-DNSDebugLogFile -InputFile 'C:\DNS\dns.log' `
+                    -CompressOutput -RemoveSourceFile`""
+
+        PS C:\> $Trigger = New-ScheduledTaskTrigger -Daily -At "2:00AM"
+
+        PS C:\> Register-ScheduledTask -TaskName "Process DNS Logs" `
+                    -Action $Action -Trigger $Trigger `
+                    -Description "Convert DNS debug logs to CSV daily"
+
+    This creates a scheduled task that runs nightly at 2 AM to process DNS
+    logs, compress the output, and clean up the source files.
+
+  Example 10: Advanced Security Analysis Workflow
+
+    Process logs and import into SQL Server for security analysis:
+
+        # Step 1: Convert log to CSV
+        PS C:\> Convert-DNSDebugLogFile -InputFile "C:\Logs\dns.log" `
+                    -ComputerName "DNS01"
+
+        # Step 2: Import to SQL Server
+        PS C:\> $connectionString = "Server=SQLServer;Database=DNSLogs;Integrated Security=True"
+        PS C:\> $connection = New-Object System.Data.SqlClient.SqlConnection
+        PS C:\> $connection.ConnectionString = $connectionString
+        PS C:\> $connection.Open()
+
+        PS C:\> $bulkCopy = New-Object System.Data.SqlClient.SqlBulkCopy($connection)
+        PS C:\> $bulkCopy.DestinationTableName = "dbo.DNSQueries"
+        PS C:\> $bulkCopy.WriteToServer([System.Data.DataTable]::New())
+        PS C:\> $connection.Close()
+
+        # Step 3: Query for suspicious activity
+        PS C:\> Invoke-Sqlcmd -Query "
+                    SELECT ComputerName, RemoteIP, QueryName, COUNT(*) as QueryCount
+                    FROM DNSQueries
+                    WHERE QueryType = 'TXT'
+                    GROUP BY ComputerName, RemoteIP, QueryName
+                    HAVING COUNT(*) > 100
+                    ORDER BY QueryCount DESC" `
+                    -ServerInstance "SQLServer" -Database "DNSLogs"
+
+    This workflow demonstrates converting logs, loading into a database, and
+    querying for potential DNS tunneling activity (excessive TXT queries).
+
+TROUBLESHOOTING
+  Common Issues and Solutions
+
+    Issue: "The file is not a valid DNS debug log file"
+    Solution: Ensure you're converting an actual DNS Server debug log. The
+    file should start with "Message logging started at" or contain DNS query
+    entries. If you're certain the file is valid, use -SkipHeaderValidation.
+
+    Issue: Output file is empty or incomplete
+    Solution: Check that the input file contains valid log entries. Some DNS
+    logs may only contain header information if no queries occurred. Verify
+    the log file isn't corrupted and contains actual query data.
+
+    Issue: Processing is very slow
+    Solution: Ensure you have sufficient memory and the disk isn't heavily
+    loaded. Consider processing smaller log files or using -CompressOutput
+    with scheduled processing to handle logs in smaller batches.
+
+    Issue: "Access denied" errors
+    Solution: Run PowerShell with appropriate permissions to read the source
+    log files and write to the destination directory. DNS log files may
+    require administrator access.
+
+    Issue: Compressed output is larger than expected
+    Solution: DNS logs with many unique values compress less efficiently.
+    This is normal for logs with diverse query patterns. ZIP compression
+    still typically achieves 70-90% size reduction.
+
+    Issue: Statistics file doesn't match expectations
+    Solution: Verify you're using -OutputType Both or -OutputType StatisticOnly.
+    Statistics aggregate data, so counts represent total queries, not unique
+    entries.
+
+  Reporting Issues
+
+    If you encounter problems not covered in this troubleshooting section:
+
+    1. Verify you're using the latest version of the module
+    2. Check the GitHub Issues page for similar problems
+    3. Collect diagnostic information:
+       - PowerShell version ($PSVersionTable)
+       - Module version (Get-Module DNSServer.DebugLogParser)
+       - Sample log file (if possible)
+       - Full error message and stack trace
+    4. Open a new issue on GitHub with detailed information
+
+KEYWORDS
+    DNS
+    Debug Log
+    Log Parser
+    CSV Conversion
+    Security Analysis
+    Network Monitoring
+    Windows DNS Server
+    Log Analytics
+    SIEM Integration
+
+SEE ALSO
+    Convert-DNSDebugLogFile
+    about_DNSDebugLog_Format
+    Online Documentation: https://github.com/AndiBellstedt/DNSServer.DebugLogParser
+    PowerShell Gallery: https://www.powershellgallery.com/packages/DNSServer.DebugLogParser
+    Microsoft DNS Server Documentation: https://learn.microsoft.com/en-us/windows-server/networking/dns/dns-overview
+    Microsoft DNS Server Documentation: https://learn.microsoft.com/en-us/windows-server/networking/dns/dns-logging-and-diagnostics
+    DNS Protocol (RFC 1035): https://www.ietf.org/rfc/rfc1035.txt

@@ -1,0 +1,28 @@
+﻿on:
+  push:
+    branches-ignore:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    if: ${{ github.event_name == 'push' && github.ref != 'refs/heads/main' }}
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install Prerequisites (PowerShell 5.1)
+        run: .\build\prerequisites.ps1
+        shell: powershell
+      - name: Validate (PowerShell 5.1)
+        run: .\build\validate.ps1
+        shell: powershell
+      - name: Install Prerequisites (PowerShell 7)
+        run: .\build\prerequisites.ps1
+        shell: pwsh
+      - name: Validate (PowerShell 7)
+        run: .\build\validate.ps1
+        shell: pwsh

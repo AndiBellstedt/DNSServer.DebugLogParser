@@ -1,0 +1,5 @@
+﻿# ignore the TestResults
+TestResults/*
+
+# ignore the publishing Directory
+publish/*
