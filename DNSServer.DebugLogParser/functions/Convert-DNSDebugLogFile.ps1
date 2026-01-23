@@ -149,6 +149,25 @@
         Example: -OutputCulture 'en-US' to format dates for US systems.
         Example: -OutputCulture ([System.Globalization.CultureInfo]::InvariantCulture) for ISO format.
 
+    .PARAMETER WhatIf
+        Shows what would happen if the cmdlet runs. The cmdlet is not run.
+
+        When specified, displays detailed information about the operations that would be performed
+        without actually executing them. Useful for:
+        - Previewing which files would be processed
+        - Verifying output file paths before processing
+        - Testing scripts before running in production
+
+    .PARAMETER Confirm
+        Prompts you for confirmation before running the cmdlet.
+
+        When specified, prompts for confirmation before:
+        - Processing each DNS debug log file
+        - Removing source files (when -RemoveSourceFile is specified)
+        - Overwriting existing output files
+
+        Useful for interactive processing when you want to control which files are processed.
+
     .EXAMPLE
         PS C:\> .\Convert-DnsDebugLogFile.ps1 -InputFile "C:\Logs\dns.log"
 
