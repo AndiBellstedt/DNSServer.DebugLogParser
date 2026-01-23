@@ -288,10 +288,40 @@
         $CompressOutput,
 
         [Parameter()]
+        [ArgumentCompleter({
+                [System.Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '')]
+                param($_commandName, $_parameterName, $wordToComplete, $_commandAst, $_fakeBoundParameters)
+                [System.Globalization.CultureInfo]::GetCultures([System.Globalization.CultureTypes]::AllCultures) |
+                Where-Object { $_.Name -like "$wordToComplete*" -and -not [string]::IsNullOrEmpty($_.Name) } |
+                Sort-Object Name |
+                ForEach-Object {
+                    [System.Management.Automation.CompletionResult]::new(
+                        $_.Name,
+                        $_.Name,
+                        [System.Management.Automation.CompletionResultType]::ParameterValue,
+                        "$($_.Name) - $($_.DisplayName)"
+                    )
+                }
+            })]
         [System.Globalization.CultureInfo]
         $InputCulture = [System.Globalization.CultureInfo]::CurrentCulture,
 
         [Parameter()]
+        [ArgumentCompleter({
+                [System.Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '')]
+                param($_commandName, $_parameterName, $wordToComplete, $_commandAst, $_fakeBoundParameters)
+                [System.Globalization.CultureInfo]::GetCultures([System.Globalization.CultureTypes]::AllCultures) |
+                Where-Object { $_.Name -like "$wordToComplete*" -and -not [string]::IsNullOrEmpty($_.Name) } |
+                Sort-Object Name |
+                ForEach-Object {
+                    [System.Management.Automation.CompletionResult]::new(
+                        $_.Name,
+                        $_.Name,
+                        [System.Management.Automation.CompletionResultType]::ParameterValue,
+                        "$($_.Name) - $($_.DisplayName)"
+                    )
+                }
+            })]
         [System.Globalization.CultureInfo]
         $OutputCulture = [System.Globalization.CultureInfo]::CurrentCulture
     )
