@@ -15,6 +15,7 @@
         - Parses all 16 fields from DNS debug logs (date, time, protocol, client IP, query type, etc.)
         - Generates structured CSV output with customizable delimiters
         - Creates optional statistical summaries aggregating activity by client, protocol, and query type
+        - Filters by context type (PACKET, EVENT, Note) to include only desired log entries
         - Processes single files or batches via pipeline
         - Supports both standard and detailed DNS debug log formats
         - Optional automatic compression of output files to save disk space
@@ -114,6 +115,25 @@
         Example: Input 'dns.log' generates 'dns.csv' which is compressed to 'dns.zip', then 'dns.csv' is removed.
 
         Compatible with PowerShell 5.1+ and Windows Server 2016+.
+
+    .PARAMETER ContextFilter
+        Filters which log entry types to include in the output.
+
+        DNS debug logs contain different context types:
+        - PACKET: DNS query and response packet information (the primary data)
+        - EVENT: DNS server events (e.g., "The DNS server has started.")
+        - Note: Diagnostic notes and warnings (e.g., socket errors, internal states)
+
+        Valid values:
+        - 'All': Include all context types (default)
+        - 'Packet': Include only PACKET entries (DNS queries/responses)
+        - 'Event': Include only EVENT entries (server events)
+        - 'Note': Include only Note entries (diagnostic information)
+
+        Default is 'All'.
+
+        Note: When using 'Event' or 'Note' filters, only DateTime, ThreadId, Context, and Information
+        columns will contain data. Other columns (Protocol, ClientIP, etc.) will be empty.
 
     .PARAMETER InputCulture
         Specifies the culture to use for parsing date/time values in the DNS debug log.
@@ -254,6 +274,25 @@
         Ideal for cross-platform compatibility or data interchange scenarios.
 
     .EXAMPLE
+        PS C:\> .\Convert-DnsDebugLogFile.ps1 -InputFile "C:\Logs\dns.log" -ContextFilter 'Packet'
+
+        Converts only DNS query and response packet entries, excluding EVENT and Note entries.
+        Outputs: C:\Logs\dns.csv containing only PACKET context entries.
+        Useful for focusing analysis on DNS query/response activity without server events or diagnostic messages.
+
+    .EXAMPLE
+        PS C:\> .\Convert-DnsDebugLogFile.ps1 -InputFile "C:\Logs\dns.log" -ContextFilter 'Event' -OutputType CSV
+
+        Converts only DNS server EVENT entries (e.g., "The DNS server has started").
+        Outputs: C:\Logs\dns.csv containing only EVENT context entries with information in the Information column.
+
+    .EXAMPLE
+        PS C:\> .\Convert-DnsDebugLogFile.ps1 -InputFile "C:\Logs\dns.log" -ContextFilter 'Note'
+
+        Converts only diagnostic Note entries (e.g., socket errors, internal state messages).
+        Outputs: C:\Logs\dns.csv containing only NOTE context entries for troubleshooting purposes.
+
+    .EXAMPLE
         PS C:\> .\Convert-DnsDebugLogFile.ps1 -InputFile "C:\Logs\dns.log" -WhatIf
 
         Shows what would happen if the command runs without actually creating any files.
@@ -266,10 +305,10 @@
         No files are created, compressed, or deleted - only shows what would happen.
 
     .NOTES
-        Version:    1.2.0.0
-        Author:     Andreas Bellstedt, Copilot
-        Date:       2026-01-23
-        Keywords:   Microsoft, Windows Server, DNSServer, DNS, DebugLog, LogParser
+        Version  : 1.2.1.0
+        Author   : Andi Bellstedt, Copilot
+        Date     : 2026-01-23
+        Keywords : Microsoft Windows Server, DNSServer, DNS, DebugLog, LogParser
 
     .LINK
         https://github.com/AndiBellstedt/DNSServer.DebugLogParser
@@ -320,6 +359,11 @@
         [Parameter()]
         [switch]
         $CompressOutput,
+
+        [Parameter()]
+        [ValidateSet('All', 'Packet', 'Event', 'Note')]
+        [string]
+        $ContextFilter = 'All',
 
         [Parameter()]
         [ArgumentCompleter({
@@ -405,8 +449,8 @@
             Field 15: Question Type
             Field 16: Question Name
         #>
-        $headerTemplateBase = 'DateTime{0}ThreadId{0}Context{0}PacketId{0}Protocol{0}Direction{0}ClientIP{0}Xid{0}Type{0}Opcode{0}FlagsHex{0}FlagsChar{0}ResponseCode{0}QuestionType{0}QuestionName'
-        $headerTemplateWithComputer = 'ComputerName{0}DateTime{0}ThreadId{0}Context{0}PacketId{0}Protocol{0}Direction{0}ClientIP{0}Xid{0}Type{0}Opcode{0}FlagsHex{0}FlagsChar{0}ResponseCode{0}QuestionType{0}QuestionName'
+        $headerTemplateBase = 'DateTime{0}ThreadId{0}Context{0}PacketId{0}Protocol{0}Direction{0}ClientIP{0}Xid{0}Type{0}Opcode{0}FlagsHex{0}FlagsChar{0}ResponseCode{0}QuestionType{0}QuestionName{0}Information'
+        $headerTemplateWithComputer = 'ComputerName{0}DateTime{0}ThreadId{0}Context{0}PacketId{0}Protocol{0}Direction{0}ClientIP{0}Xid{0}Type{0}Opcode{0}FlagsHex{0}FlagsChar{0}ResponseCode{0}QuestionType{0}QuestionName{0}Information'
         #endregion Initialization
 
         # Start a stopwatch to measure total script runtime and a file counter
@@ -434,6 +478,7 @@
                 continue
             }
 
+            # Check if input path is a directory
             if ((Get-Item -Path $currentFile).PSIsContainer) {
                 $errorRecord = [System.Management.Automation.ErrorRecord]::new(
                     [System.ArgumentException]::new("Input path is a directory, not a file: '$currentFile'. Please specify a file path."),
@@ -482,12 +527,9 @@
                 }
             }
 
-            Write-Verbose "Starting processing: '$resolvedPath'"
-            Write-Verbose "Output path: '$currentOutputPath'"
-            Write-Verbose "CSV delimiter: '$Delimiter'"
-            Write-Verbose "Output type: $($OutputType)"
-            Write-Verbose "Input culture for date parsing: $($InputCulture.Name) ($($InputCulture.DisplayName))"
-            Write-Verbose "Output culture for date formatting: $($OutputCulture.Name) ($($OutputCulture.DisplayName))"
+            Write-Verbose "Starting processing: '$resolvedPath' (Input culture for date parsing: $($InputCulture.Name) [$($InputCulture.DisplayName)])"
+            Write-Verbose "CSV delimiter: '$Delimiter' | Output type: $($OutputType)"
+            Write-Verbose "Output path: '$currentOutputPath' (Output culture for date formatting: $($OutputCulture.Name) [$($OutputCulture.DisplayName)])"
 
             # Build header with specified delimiter (conditionally include ComputerName)
             $includeComputerName = -not [string]::IsNullOrEmpty($ComputerName)
@@ -544,7 +586,7 @@
                     $line = $reader.ReadLine()
                     $lineCount++
 
-                    $parsed = ConvertFrom-DnsLogLine -Line $line -Culture $InputCulture
+                    $parsed = ConvertFrom-DnsLogLine -Line $line -Culture $InputCulture -ContextFilter $ContextFilter
                     if ($null -ne $parsed) {
                         # Build CSV line manually for performance (avoiding Export-Csv overhead) - only if needed
                         if ($writeCsvData) {
@@ -552,7 +594,7 @@
                             $formattedDateTime = $parsed.DateTime.ToString($outputDateTimeFormat, $OutputCulture)
 
                             if ($includeComputerName) {
-                                $csvLine = ($ComputerName + $Delimiter + '{0}' + $Delimiter + '{1}' + $Delimiter + '{2}' + $Delimiter + '{3}' + $Delimiter + '{4}' + $Delimiter + '{5}' + $Delimiter + '{6}' + $Delimiter + '{7}' + $Delimiter + '{8}' + $Delimiter + '{9}' + $Delimiter + '{10}' + $Delimiter + '{11}' + $Delimiter + '{12}' + $Delimiter + '{13}' + $Delimiter + '"{14}"') -f @(
+                                $csvLine = ($ComputerName + $Delimiter + '{0}' + $Delimiter + '{1}' + $Delimiter + '{2}' + $Delimiter + '{3}' + $Delimiter + '{4}' + $Delimiter + '{5}' + $Delimiter + '{6}' + $Delimiter + '{7}' + $Delimiter + '{8}' + $Delimiter + '{9}' + $Delimiter + '{10}' + $Delimiter + '{11}' + $Delimiter + '{12}' + $Delimiter + '{13}' + $Delimiter + '"{14}"' + $Delimiter + '"{15}"') -f @(
                                     $formattedDateTime,
                                     $parsed.ThreadId,
                                     $parsed.Context,
@@ -585,10 +627,11 @@
                                     ),
                                     $parsed.ResponseCode,
                                     $parsed.QuestionType,
-                                    $parsed.QuestionName
+                                    $parsed.QuestionName,
+                                    $parsed.Information
                                 )
                             } else {
-                                $csvLine = ('{0}' + $Delimiter + '{1}' + $Delimiter + '{2}' + $Delimiter + '{3}' + $Delimiter + '{4}' + $Delimiter + '{5}' + $Delimiter + '{6}' + $Delimiter + '{7}' + $Delimiter + '{8}' + $Delimiter + '{9}' + $Delimiter + '{10}' + $Delimiter + '{11}' + $Delimiter + '{12}' + $Delimiter + '{13}' + $Delimiter + '"{14}"') -f @(
+                                $csvLine = ('{0}' + $Delimiter + '{1}' + $Delimiter + '{2}' + $Delimiter + '{3}' + $Delimiter + '{4}' + $Delimiter + '{5}' + $Delimiter + '{6}' + $Delimiter + '{7}' + $Delimiter + '{8}' + $Delimiter + '{9}' + $Delimiter + '{10}' + $Delimiter + '{11}' + $Delimiter + '{12}' + $Delimiter + '{13}' + $Delimiter + '"{14}"' + $Delimiter + '"{15}"') -f @(
                                     $formattedDateTime,
                                     $parsed.ThreadId,
                                     $parsed.Context,
@@ -621,7 +664,8 @@
                                     ),
                                     $parsed.ResponseCode,
                                     $parsed.QuestionType,
-                                    $parsed.QuestionName
+                                    $parsed.QuestionName,
+                                    $parsed.Information
                                 )
                             }
 

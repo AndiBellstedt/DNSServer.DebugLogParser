@@ -411,12 +411,13 @@ Describe "ConvertFrom-DnsLogLine - Functionality" {
             $result.PSObject.Properties.Name | Should -Contain 'ResponseCode'
             $result.PSObject.Properties.Name | Should -Contain 'QuestionType'
             $result.PSObject.Properties.Name | Should -Contain 'QuestionName'
+            $result.PSObject.Properties.Name | Should -Contain 'Information'
         }
 
-        It "Should have 15 properties" {
+        It "Should have 16 properties" {
             $result = ConvertFrom-DnsLogLine -Line $sampleLogLineQuery
 
-            ($result.PSObject.Properties | Measure-Object).Count | Should -Be 15
+            ($result.PSObject.Properties | Measure-Object).Count | Should -Be 16
         }
     }
 }
