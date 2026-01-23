@@ -109,7 +109,7 @@ DNSServer.DebugLogParser performs file operations on DNS Server debug logs, whic
 ### Log File Access and Permissions
 - DNS Server debug logs typically require administrative privileges to access.
 - Ensure proper file system permissions are maintained on:
-  - Input DNS debug log files (typically in `C:\Windows\System32\dns\`)
+  - Input DNS debug log files (typically in `C:\Windows\System32\dns\` on default installations)
   - Output CSV files containing parsed query data
   - Temporary files during processing
   - Compressed archives when using `-CompressOutput`
