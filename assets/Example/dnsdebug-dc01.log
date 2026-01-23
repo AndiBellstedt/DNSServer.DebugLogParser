@@ -1,0 +1,53 @@
+DNS Server log file creation at 20.01.2026 23:00:16
+Log file wrap at 20.01.2026 23:00:16
+
+Message logging key (for packets - other items use a subset of these fields):
+	Field #  Information         Values
+	-------  -----------         ------
+	   1     Date
+	   2     Time
+	   3     Thread ID
+	   4     Context
+	   5     Internal packet identifier
+	   6     UDP/TCP indicator
+	   7     Send/Receive indicator
+	   8     Remote IP
+	   9     Xid (hex)
+	  10     Query/Response      R = Response
+	                             blank = Query
+	  11     Opcode              Q = Standard Query
+	                             N = Notify
+	                             U = Update
+	                             ? = Unknown
+	  12     [ Flags (hex)
+	  13     Flags (char codes)  A = Authoritative Answer
+	                             T = Truncated Response
+	                             D = Recursion Desired
+	                             R = Recursion Available
+	  14     ResponseCode ]
+	  15     Question Type
+	  16     Question Name
+
+20.01.2026 23:00:16 0FE0 PACKET  000002C53117D990 UDP Rcv 10.0.0.2        c049   Q [0001   D   NOERROR] A      (3)odc(10)officeapps(4)live(3)com(0)
+
+20.01.2026 23:00:16 0FE0 PACKET  000002C5312634D0 UDP Snd 10.0.0.1        420b   Q [0001   D   NOERROR] A      (3)odc(10)officeapps(4)live(3)com(0)
+
+20.01.2026 23:00:17 0FE0 PACKET  000002C530473140 UDP Rcv 10.0.0.1        420b R Q [8081   DR  NOERROR] A      (3)odc(10)officeapps(4)live(3)com(0)
+
+20.01.2026 23:00:17 0FE0 PACKET  000002C53117D990 UDP Snd 10.0.0.2        c049 R Q [8081   DR  NOERROR] A      (3)odc(10)officeapps(4)live(3)com(0)
+
+20.01.2026 23:00:18 0FE0 PACKET  000002C5307CFCD0 UDP Rcv 10.0.0.2        ede1   Q [0001   D   NOERROR] A      (4)ocsp(8)digicert(3)com(0)
+
+20.01.2026 23:00:18 0FE0 PACKET  000002C530473140 UDP Snd 10.0.0.1        0014   Q [0001   D   NOERROR] A      (4)ocsp(8)digicert(3)com(0)
+
+20.01.2026 23:00:18 0FE0 PACKET  000002C52F67C0F0 UDP Rcv 10.0.0.1        0014 R Q [8081   DR  NOERROR] A      (4)ocsp(8)digicert(3)com(0)
+
+20.01.2026 23:00:18 0FE0 PACKET  000002C5307CFCD0 UDP Snd 10.0.0.2        ede1 R Q [8081   DR  NOERROR] A      (4)ocsp(8)digicert(3)com(0)
+
+20.01.2026 23:00:22 0FE0 PACKET  000002C52FBF1130 UDP Rcv 10.0.0.2        1cde   Q [0001   D   NOERROR] A      (1)4(2)au(8)download(13)windowsupdate(3)com(0)
+
+20.01.2026 23:00:22 0FE0 PACKET  000002C5302C8C90 UDP Snd 10.0.0.1        d9e4   Q [0001   D   NOERROR] A      (1)4(2)au(8)download(13)windowsupdate(3)com(0)
+
+20.01.2026 23:00:22 0FE0 PACKET  000002C52EBD9920 UDP Rcv 10.0.0.1        d9e4 R Q [8081   DR  NOERROR] A      (1)4(2)au(8)download(13)windowsupdate(3)com(0)
+
+20.01.2026 23:00:22 0FE0 PACKET  000002C52FBF1130 UDP Snd 10.0.0.2        1cde R Q [8081   DR  NOERROR] A      (1)4(2)au(8)download(13)windowsupdate(3)com(0)
