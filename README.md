@@ -211,25 +211,27 @@ foreach ($server in $servers) {
 
 #### CSV Data File Fields
 
-The parsed CSV contains 16 fields extracted from each DNS log entry:
+The parsed CSV contains 17 fields extracted from each DNS log entry:
 
-| Field        | Description                                                           | Example             |
-| ------------ | --------------------------------------------------------------------- | ------------------- |
-| DateTime     | Timestamp of the DNS query/response (format depends on OutputCulture) | 2026-01-23 14:32:15 |
-| ThreadId     | DNS Server thread ID that processed the request                       | 0ABC                |
-| Context      | Internal context identifier                                           | PACKET              |
-| PacketId     | Internal packet identifier                                            | 0000012345678ABC    |
-| Protocol     | UDP or TCP                                                            | UDP                 |
-| Direction    | Snd (Send/Response) or Rcv (Receive/Query)                            | Rcv                 |
-| ClientIP     | IP address of the client making the request                           | 192.168.1.100       |
-| Xid          | DNS transaction ID (hexadecimal)                                      | F8A3                |
-| Type         | Query or Response (R=Response, blank=Query)                           | R                   |
-| Opcode       | Q=Standard Query, N=Notify, U=Update, ?=Unknown                       | Q                   |
-| FlagsHex     | DNS flags in hexadecimal                                              | 0001                |
-| FlagsChar    | DNS flags as characters (A=Authoritative, T=Truncated, D/R=Recursion) | DR                  |
-| ResponseCode | DNS response code (NOERROR, NXDOMAIN, SERVFAIL, etc.)                 | NOERROR             |
-| QuestionType | DNS query type (A, AAAA, CNAME, MX, PTR, SOA, SRV, etc.)              | A                   |
-| QuestionName | Domain name queried                                                   | www.example.com     |
+| Field        | Description                                                           | Example                     |
+| ------------ | --------------------------------------------------------------------- | --------------------------- |
+| DateTime     | Timestamp of the DNS query/response (format depends on OutputCulture) | 2026-01-23 14:32:15         |
+| ThreadId     | DNS Server thread ID that processed the request                       | 0ABC                        |
+| Context      | Internal context identifier                                           | PACKET                      |
+| PacketId     | Internal packet identifier                                            | 0000012345678ABC            |
+| Protocol     | UDP or TCP                                                            | UDP                         |
+| Direction    | Snd (Send/Response) or Rcv (Receive/Query)                            | Rcv                         |
+| ClientIP     | IP address of the client making the request                           | 192.168.1.100               |
+| Xid          | DNS transaction ID (hexadecimal)                                      | F8A3                        |
+| Type         | Query or Response (R=Response, blank=Query)                           | R                           |
+| Opcode       | Q=Standard Query, N=Notify, U=Update, ?=Unknown                       | Q                           |
+| FlagsHex     | DNS flags in hexadecimal                                              | 0001                        |
+| FlagsChar    | DNS flags as characters (A=Authoritative, T=Truncated, D/R=Recursion) | DR                          |
+| ResponseCode | DNS response code (NOERROR, NXDOMAIN, SERVFAIL, etc.)                 | NOERROR                     |
+| QuestionType | DNS query type (A, AAAA, CNAME, MX, PTR, SOA, SRV, etc.)              | A                           |
+| QuestionName | Domain name queried                                                   | www.example.com             |
+| Information  | Event/diagnostic information (populated for EVENT and Note contexts)  | The DNS server has started. |
+| ComputerName | Server identifier (populated if -ComputerName parameter specified)    | DNS01                       |
 
 #### Statistics File Fields
 

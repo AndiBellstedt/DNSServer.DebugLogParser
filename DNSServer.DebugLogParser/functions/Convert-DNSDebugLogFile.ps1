@@ -8,9 +8,10 @@
         in Excel, Power BI, SQL databases, or SIEM tools. Designed for security analysis, performance
         monitoring, troubleshooting, and compliance reporting.
 
-        The cmdlet parses all 16 fields from DNS debug logs including date/time, protocol, client IP,
-        query type, domain names, response codes, and flags. It generates structured CSV output with
-        an optional statistics summary aggregating activity by client, protocol, and query type.
+        The cmdlet parses all 17 fields from DNS debug logs including date/time, protocol, client IP,
+        query type, domain names, response codes, flags, event information, and computer name. It generates
+        structured CSV output with an optional statistics summary aggregating activity by client, protocol,
+        and query type.
 
         KEY FEATURES:
         - High-performance parsing optimized for large files (100MB+)
