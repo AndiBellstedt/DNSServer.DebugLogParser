@@ -542,7 +542,9 @@
                                 $parsed.RemoteIP,
                                 $parsed.Xid,
                                 $(
-                                    if ($parsed.QueryResponse -eq 'R') { 'Response' } else { if ($parsed.Context -like "Packet") { 'Query' } }
+                                    if ($parsed.QueryResponse -eq 'R') { 'Response' }
+                                    elseif ($parsed.Context -eq 'PACKET') { 'Query' }
+                                    else { '' }
                                 ),
                                 $(
                                     switch ($parsed.Opcode) {
