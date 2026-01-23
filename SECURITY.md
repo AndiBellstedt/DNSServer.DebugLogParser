@@ -2,7 +2,7 @@
 
 This document describes how to report security vulnerabilities for **DNSServer.DebugLogParser** and what to expect from the maintainers.
 
-DNSServer.DebugLogParser is a PowerShell module that inventories, exports/imports, restores, synchronizes, and publishes Git repository metadata across machines (including optional GitHub Gist integration).
+DNSServer.DebugLogParser is a PowerShell module that parses Windows DNS Server debug log files into structured data formats like CSV for analytics, reporting, and security analysis.
 
 ---
 
@@ -37,16 +37,15 @@ To help triage quickly, include:
 - Your environment:
   - PowerShell version (Windows PowerShell 5.1 / PowerShell 7+)
   - OS
-  - Git version (if relevant)
 - Any relevant logs **with secrets removed**
 - Suggested remediation (optional)
 
 ### Sensitive Data Handling
 Do **not** include any of the following in reports or logs:
 
-- GitHub Personal Access Tokens (PATs), OAuth tokens, API keys
-- Credentials
-- Private repository URLs that reveal internal infrastructure
+- API keys, tokens, or credentials
+- DNS query data containing sensitive internal information
+- Client IP addresses or internal network topology details
 - Any personal data you are not authorized to share
 
 ---
@@ -83,9 +82,9 @@ Severity is determined by maintainers considering:
 - Localization resources and type/format definition files shipped with the module
 
 ### Out of Scope (Examples)
-- Vulnerabilities in **Git** itself
+- Vulnerabilities in **Windows DNS Server** itself
 - Vulnerabilities in **PowerShell** / the runtime
-- Issues in third-party services (e.g., GitHub, GitHub Gist) unless caused by DNSServer.DebugLogParser’s implementation
+- Issues in third-party services (e.g., GitHub) unless caused by DNSServer.DebugLogParser’s implementation
 - Social engineering, phishing, or physical attacks
 
 If a report is out of scope but relevant, we may still suggest mitigations or upstream reporting paths.
@@ -94,24 +93,24 @@ If a report is out of scope but relevant, we may still suggest mitigations or up
 
 ## Project-Specific Security Considerations
 
-DNSServer.DebugLogParser performs file operations, process execution (Git), and optional remote publication (GitHub Gist). The following are security-sensitive areas:
+DNSServer.DebugLogParser performs file operations (reading DNS debug logs, writing CSV files, optional compression). The following are security-sensitive areas:
 
-### Tokens & Secrets (GitHub Gist)
-- Treat GitHub tokens as secrets at all times.
-- Prefer secure secret storage solutions (for example Windows Credential Manager, SecretManagement vaults, or other OS-native secret stores).
-- Avoid placing tokens in scripts, console history, CI logs, or configuration files.
+### Path Handling / Traversal
+- Input and output file paths can be attacker-controlled in some workflows (shared directories, network shares).
+- The module includes protections against unsafe relative paths; please report any bypass.
 
 ### Logging
 - DNSServer.DebugLogParser uses PSFramework logging.
 - Security reports should assume logs might be collected for diagnostics—**secrets must never be logged**.
 - If you believe the module logs sensitive data, report it as a vulnerability.
 
-### Path Handling / Traversal
-- Repository list entries and destination paths can be attacker-controlled in some workflows (shared lists, network shares).
-- The module includes protections against unsafe relative paths; please report any bypass.
+### Data Handling
+- DNS debug logs may contain sensitive information (internal hostnames, client IP addresses, query patterns).
+- Ensure proper access controls on input files, output files, and statistical summaries.
+- Be cautious when sharing parsed CSV data, as it may reveal network topology or user behavior.
 
 ### Scheduled Tasks / Automation
-- Auto-sync workflows may involve Windows Task Scheduler.
+- Automated parsing workflows may involve Windows Task Scheduler or other automation tools.
 - Report any scenario where task registration or execution could be abused for privilege escalation or unintended command execution.
 
 ---
