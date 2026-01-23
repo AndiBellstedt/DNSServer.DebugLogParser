@@ -2,7 +2,7 @@
 
 This document describes how to report security vulnerabilities for **DNSServer.DebugLogParser** and what to expect from the maintainers.
 
-DNSServer.DebugLogParser is a PowerShell module that inventories, exports/imports, restores, synchronizes, and publishes Git repository metadata across machines (including optional GitHub Gist integration).
+DNSServer.DebugLogParser is a PowerShell module that parses Windows DNS Server debug log files into structured CSV format for analytics, security analysis, and compliance reporting.
 
 ---
 
@@ -83,9 +83,9 @@ Severity is determined by maintainers considering:
 - Localization resources and type/format definition files shipped with the module
 
 ### Out of Scope (Examples)
-- Vulnerabilities in **Git** itself
+- Vulnerabilities in **Windows DNS Server** itself
 - Vulnerabilities in **PowerShell** / the runtime
-- Issues in third-party services (e.g., GitHub, GitHub Gist) unless caused by DNSServer.DebugLogParser’s implementation
+- Issues in third-party analysis tools or databases where parsed data is imported
 - Social engineering, phishing, or physical attacks
 
 If a report is out of scope but relevant, we may still suggest mitigations or upstream reporting paths.
@@ -94,25 +94,62 @@ If a report is out of scope but relevant, we may still suggest mitigations or up
 
 ## Project-Specific Security Considerations
 
-DNSServer.DebugLogParser performs file operations, process execution (Git), and optional remote publication (GitHub Gist). The following are security-sensitive areas:
+DNSServer.DebugLogParser performs file operations on DNS Server debug logs, which may contain sensitive network information. The following are security-sensitive areas:
 
-### Tokens & Secrets (GitHub Gist)
-- Treat GitHub tokens as secrets at all times.
-- Prefer secure secret storage solutions (for example Windows Credential Manager, SecretManagement vaults, or other OS-native secret stores).
-- Avoid placing tokens in scripts, console history, CI logs, or configuration files.
+### DNS Query Data Privacy
+- DNS debug logs contain potentially sensitive information including:
+  - Internal domain names and network topology
+  - Client IP addresses (may be considered PII in some jurisdictions)
+  - Query patterns that reveal user behavior
+  - Failed queries that may expose internal applications or services
+- When sharing parsed CSV output or statistics, ensure you have authorization to share this data.
+- Consider data retention and privacy regulations (GDPR, CCPA, etc.) when storing parsed DNS data.
+- Report any scenario where the module inadvertently exposes or logs sensitive query data beyond what's in the source log file.
 
-### Logging
-- DNSServer.DebugLogParser uses PSFramework logging.
-- Security reports should assume logs might be collected for diagnostics—**secrets must never be logged**.
-- If you believe the module logs sensitive data, report it as a vulnerability.
+### Log File Access and Permissions
+- DNS Server debug logs typically require administrative privileges to access.
+- Ensure proper file system permissions are maintained on:
+  - Input DNS debug log files (typically in `C:\Windows\System32\dns\`)
+  - Output CSV files containing parsed query data
+  - Temporary files during processing
+  - Compressed archives when using `-CompressOutput`
+- Do not process DNS logs from untrusted sources or network shares without proper validation.
+- When using `-RemoveSourceFile`, ensure you have proper authorization and backups, as this permanently deletes source files.
 
-### Path Handling / Traversal
-- Repository list entries and destination paths can be attacker-controlled in some workflows (shared lists, network shares).
-- The module includes protections against unsafe relative paths; please report any bypass.
+### Path Handling and Traversal
+- Input file paths and output file paths can be user-controlled or come from external sources.
+- The module should validate paths to prevent:
+  - Path traversal attacks (e.g., `../../Windows/System32`)
+  - Writing to protected system locations
+  - Overwriting critical files
+- Report any scenario where path validation can be bypassed or where the module writes to unintended locations.
 
-### Scheduled Tasks / Automation
-- Auto-sync workflows may involve Windows Task Scheduler.
-- Report any scenario where task registration or execution could be abused for privilege escalation or unintended command execution.
+### DNS Log Injection and Malformed Data
+- DNS debug logs may contain malformed entries, either due to DNS attacks or corrupted log files.
+- The module should safely handle:
+  - Unexpected characters in domain names
+  - Extremely long query names (potential buffer issues)
+  - Malicious characters that could affect CSV parsing (delimiters, quotes, newlines)
+  - Invalid IP addresses or malformed protocol fields
+- Report any scenario where malformed DNS log entries cause crashes, data corruption, or unexpected behavior.
+
+### Resource Exhaustion and DoS
+- Very large DNS debug log files (multi-gigabyte) could cause:
+  - Excessive memory consumption
+  - CPU exhaustion during parsing
+  - Disk space exhaustion from CSV output (typically 2-3x larger than input)
+  - Temporary file accumulation
+- The module implements streaming I/O to minimize memory footprint, but report any resource exhaustion issues.
+- When using automation, ensure adequate disk space monitoring to prevent disk full conditions.
+
+### Logging and Diagnostics
+- DNSServer.DebugLogParser uses verbose output for operational details.
+- Diagnostic output should never include:
+  - Sensitive DNS query data beyond what's expected in normal operation
+  - File system paths that reveal internal infrastructure
+  - Temporary file contents or intermediate parsing data
+- Report any scenario where verbose or error output exposes sensitive information beyond the scope of the input log file.
+
 
 ---
 
