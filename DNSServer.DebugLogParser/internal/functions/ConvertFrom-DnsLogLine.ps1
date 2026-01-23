@@ -12,7 +12,22 @@
 
     .EXAMPLE
         PS C:\> ConvertFrom-DnsLogLine -Line "20.01.2026 23:00:18 0FE0 PACKET  000002C5307CFCD0 UDP Rcv 10.0.0.2        ede1   Q [0001   D   NOERROR] A      (4)ocsp(8)digicert(3)com(0)"
-        Returns a hashtable with parsed log data.
+
+        DateTime      : 1/20/2026 11:00:18 PM
+        ThreadId      : 0FE0
+        Context       : PACKET
+        PacketId      : 000002C5307CFCD0
+        Protocol      : UDP
+        Direction     : Rcv
+        RemoteIP      : 10.0.0.2
+        Xid           : ede1
+        QueryResponse :
+        Opcode        : Q
+        FlagsHex      : 0001
+        FlagsChar     : D
+        ResponseCode  : NOERROR
+        QuestionType  : A
+        QuestionName  : ocsp.digicert.com
 
     .NOTES
         Internal function not exported from module.

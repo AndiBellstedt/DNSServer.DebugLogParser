@@ -7,8 +7,8 @@
         Internal helper function that converts DNS server log name format to standard FQDN.
         Handles DNS log format with length prefixes and converts to dotted notation.
 
-    .PARAMETER Name
-        DNS name string in log format to convert.
+    .PARAMETER EncodedName
+        DNS name string in encoded log format to convert. Format uses length-prefixed labels like (7)example(3)com(0).
 
     .EXAMPLE
         PS C:\> ConvertTo-Fqdn -EncodedName "(7)example(3)com(0)"
@@ -21,6 +21,7 @@
         Version:    1.0.0
         Author:     Andi Bellstedt
         Date:       2026-01-23
+
     #>
     [CmdletBinding()]
     [OutputType([string])]

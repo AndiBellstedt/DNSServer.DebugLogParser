@@ -27,9 +27,11 @@
 
     .NOTES
         Internal function not exported from module.
-        Version: 1.0.0
-        Author: Andi Bellstedt
-        Date: 2026-01-23
+
+        Version:    1.0.0
+        Author:     Andi Bellstedt
+        Date:       2026-01-23
+
     #>
     [CmdletBinding()]
     [OutputType([int])]
