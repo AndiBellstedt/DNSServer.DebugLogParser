@@ -249,7 +249,7 @@
         Ideal for scheduled log processing pipelines.
 
     .NOTES
-        Version  : 1.3.0.0
+        Version  : 1.3.0.1
         Author   : Andi Bellstedt, Copilot
         Date     : 2026-01-23
         Keywords : Microsoft Windows Server, DNSServer, DNS, DebugLog, LogParser
@@ -532,6 +532,11 @@
                             # Format DateTime using OutputCulture for culture-aware output
                             $formattedDateTime = $parsed.DateTime.ToString($outputDateTimeFormat, $OutputCulture)
 
+                            # Escape double quotes in QuestionName and Information fields for proper CSV formatting
+                            # Standard CSV escaping: replace " with ""
+                            $escapedQuestionName = $parsed.QuestionName -replace '"', '""'
+                            $escapedInformation = $parsed.Information -replace '"', '""'
+
                             # ComputerName is always included at the end
                             $csvLine = ('{0}' + $Delimiter + '{1}' + $Delimiter + '{2}' + $Delimiter + '{3}' + $Delimiter + '{4}' + $Delimiter + '{5}' + $Delimiter + '{6}' + $Delimiter + '{7}' + $Delimiter + '{8}' + $Delimiter + '{9}' + $Delimiter + '{10}' + $Delimiter + '{11}' + $Delimiter + '{12}' + $Delimiter + '{13}' + $Delimiter + '"{14}"' + $Delimiter + '"{15}"' + $Delimiter + '{16}') -f @(
                                 $formattedDateTime,
@@ -568,8 +573,8 @@
                                 ),
                                 $parsed.ResponseCode,
                                 $parsed.QuestionType,
-                                $parsed.QuestionName,
-                                $parsed.Information,
+                                $escapedQuestionName,
+                                $escapedInformation,
                                 $computerNameValue
                             )
 
