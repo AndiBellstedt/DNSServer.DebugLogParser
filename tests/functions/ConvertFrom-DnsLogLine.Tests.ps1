@@ -80,6 +80,39 @@ Describe "ConvertFrom-DnsLogLine - Parameter Contract" {
             # Should have default value
             $cultureParam.DefaultValue | Should -Not -BeNullOrEmpty
         }
+
+        It "Should have ContextFilter parameter with ValidateSet attribute" {
+            $contextFilterParam = $paramBlock.Parameters | Where-Object {
+                $_.Name.VariablePath.UserPath -eq 'ContextFilter'
+            }
+
+            $contextFilterParam | Should -Not -BeNullOrEmpty
+            $contextFilterParam.StaticType.Name | Should -Be 'String'
+
+            # Check for ValidateSet
+            $validateSet = $contextFilterParam.Attributes |
+            Where-Object { $_.TypeName.Name -eq 'ValidateSet' }
+
+            $validateSet | Should -Not -BeNullOrEmpty
+
+            # Check expected values
+            $validValues = $validateSet.PositionalArguments | ForEach-Object { $_.Value }
+            $validValues | Should -Contain 'All'
+            $validValues | Should -Contain 'Packet'
+            $validValues | Should -Contain 'Event'
+            $validValues | Should -Contain 'Note'
+            $validValues.Count | Should -Be 4
+        }
+
+        It "Should have ContextFilter parameter with default value of 'All'" {
+            $contextFilterParam = $paramBlock.Parameters | Where-Object {
+                $_.Name.VariablePath.UserPath -eq 'ContextFilter'
+            }
+
+            $contextFilterParam | Should -Not -BeNullOrEmpty
+            $contextFilterParam.DefaultValue | Should -Not -BeNullOrEmpty
+            $contextFilterParam.DefaultValue.Extent.Text | Should -Match "'All'"
+        }
     }
 
     Context "Parameter Naming and Consistency" {
@@ -418,6 +451,317 @@ Describe "ConvertFrom-DnsLogLine - Functionality" {
             $result = ConvertFrom-DnsLogLine -Line $sampleLogLineQuery
 
             ($result.PSObject.Properties | Measure-Object).Count | Should -Be 16
+        }
+    }
+
+    Context "EVENT Context Parsing" {
+        BeforeAll {
+            # Sample EVENT log lines (various formats)
+            $eventLineStarted = "1/20/2026 11:00:18 PM 0518 EVENT   The DNS server has started."
+            $eventLineStopped = "1/21/2026 10:30:45 AM 0518 EVENT   The DNS server has been stopped."
+            $eventLineZoneLoaded = "1/20/2026 11:01:00 PM 0A2C EVENT   Zone example.com was loaded."
+            $eventLineGermanFormat = "20.01.2026 23:00:18 0518 EVENT   Der DNS-Server wurde gestartet."
+            $eventLineMultiWord = "1/20/2026 11:02:15 PM 0B44 EVENT   The DNS server is ready to accept queries from clients."
+        }
+
+        It "Should parse EVENT context with 'The DNS server has started.' message" {
+            $result = ConvertFrom-DnsLogLine -Line $eventLineStarted
+
+            $result | Should -Not -BeNullOrEmpty
+            $result.Context | Should -Be 'EVENT'
+            $result.DateTime | Should -BeOfType [DateTime]
+            $result.ThreadId | Should -Be '0518'
+            $result.Information | Should -Be 'The DNS server has started.'
+        }
+
+        It "Should parse EVENT context with 'The DNS server has been stopped.' message" {
+            $result = ConvertFrom-DnsLogLine -Line $eventLineStopped
+
+            $result | Should -Not -BeNullOrEmpty
+            $result.Context | Should -Be 'EVENT'
+            $result.Information | Should -Be 'The DNS server has been stopped.'
+        }
+
+        It "Should parse EVENT context with zone loading message" {
+            $result = ConvertFrom-DnsLogLine -Line $eventLineZoneLoaded
+
+            $result | Should -Not -BeNullOrEmpty
+            $result.Context | Should -Be 'EVENT'
+            $result.Information | Should -Be 'Zone example.com was loaded.'
+        }
+
+        It "Should parse EVENT context with German date format" {
+            $germanCulture = [System.Globalization.CultureInfo]::GetCultureInfo('de-DE')
+            $result = ConvertFrom-DnsLogLine -Line $eventLineGermanFormat -Culture $germanCulture
+
+            $result | Should -Not -BeNullOrEmpty
+            $result.Context | Should -Be 'EVENT'
+            $result.DateTime.Year | Should -Be 2026
+            $result.DateTime.Month | Should -Be 1
+            $result.DateTime.Day | Should -Be 20
+            $result.Information | Should -Be 'Der DNS-Server wurde gestartet.'
+        }
+
+        It "Should parse EVENT context with multi-word message" {
+            $result = ConvertFrom-DnsLogLine -Line $eventLineMultiWord
+
+            $result | Should -Not -BeNullOrEmpty
+            $result.Context | Should -Be 'EVENT'
+            $result.Information | Should -Be 'The DNS server is ready to accept queries from clients.'
+        }
+
+        It "Should have empty PACKET-specific fields for EVENT context" {
+            $result = ConvertFrom-DnsLogLine -Line $eventLineStarted
+
+            $result.PacketId | Should -BeNullOrEmpty
+            $result.Protocol | Should -BeNullOrEmpty
+            $result.Direction | Should -BeNullOrEmpty
+            $result.RemoteIP | Should -BeNullOrEmpty
+            $result.Xid | Should -BeNullOrEmpty
+            $result.QueryResponse | Should -BeNullOrEmpty
+            $result.Opcode | Should -BeNullOrEmpty
+            $result.FlagsHex | Should -BeNullOrEmpty
+            $result.FlagsChar | Should -BeNullOrEmpty
+            $result.ResponseCode | Should -BeNullOrEmpty
+            $result.QuestionType | Should -BeNullOrEmpty
+            $result.QuestionName | Should -BeNullOrEmpty
+        }
+
+        It "Should populate Information field for EVENT context" {
+            $result = ConvertFrom-DnsLogLine -Line $eventLineStarted
+
+            $result.Information | Should -Not -BeNullOrEmpty
+            $result.Information | Should -BeOfType [string]
+            $result.Information.Length | Should -BeGreaterThan 0
+        }
+    }
+
+    Context "NOTE Context Parsing" {
+        BeforeAll {
+            # Sample NOTE log lines (various scenarios)
+            $noteLineSocketFailure = "1/20/2026 11:00:18 PM 5C8 Note: got GQCS failure on a dead socket context status=995, socket=612, pcon=00000020F4B18490, state=-1, IP=::"
+            $noteLineTimeout = "1/21/2026 8:30:22 AM 0A2C Note: timeout on send() to TCP client 10.0.0.5, connection terminated"
+            $noteLineMemory = "1/20/2026 11:05:45 PM 0FE0 Note: memory allocation warning - packet queue at 85% capacity"
+            $noteLineGermanFormat = "20.01.2026 23:00:18 5C8 Note: Socket-Fehler erkannt"
+            $noteLineShort = "1/20/2026 11:00:20 PM 1A2B Note: cache flushed"
+        }
+
+        It "Should parse NOTE context with socket failure message" {
+            $result = ConvertFrom-DnsLogLine -Line $noteLineSocketFailure
+
+            $result | Should -Not -BeNullOrEmpty
+            $result.Context | Should -Be 'NOTE'
+            $result.DateTime | Should -BeOfType [DateTime]
+            $result.ThreadId | Should -Be '5C8'
+            $result.Information | Should -Be 'got GQCS failure on a dead socket context status=995, socket=612, pcon=00000020F4B18490, state=-1, IP=::'
+        }
+
+        It "Should parse NOTE context with timeout message" {
+            $result = ConvertFrom-DnsLogLine -Line $noteLineTimeout
+
+            $result | Should -Not -BeNullOrEmpty
+            $result.Context | Should -Be 'NOTE'
+            $result.Information | Should -Be 'timeout on send() to TCP client 10.0.0.5, connection terminated'
+        }
+
+        It "Should parse NOTE context with memory warning" {
+            $result = ConvertFrom-DnsLogLine -Line $noteLineMemory
+
+            $result | Should -Not -BeNullOrEmpty
+            $result.Context | Should -Be 'NOTE'
+            $result.Information | Should -Be 'memory allocation warning - packet queue at 85% capacity'
+        }
+
+        It "Should parse NOTE context with German date format" {
+            $germanCulture = [System.Globalization.CultureInfo]::GetCultureInfo('de-DE')
+            $result = ConvertFrom-DnsLogLine -Line $noteLineGermanFormat -Culture $germanCulture
+
+            $result | Should -Not -BeNullOrEmpty
+            $result.Context | Should -Be 'NOTE'
+            $result.DateTime.Year | Should -Be 2026
+            $result.DateTime.Month | Should -Be 1
+            $result.DateTime.Day | Should -Be 20
+            $result.Information | Should -Be 'Socket-Fehler erkannt'
+        }
+
+        It "Should parse NOTE context with short message" {
+            $result = ConvertFrom-DnsLogLine -Line $noteLineShort
+
+            $result | Should -Not -BeNullOrEmpty
+            $result.Context | Should -Be 'NOTE'
+            $result.Information | Should -Be 'cache flushed'
+        }
+
+        It "Should have empty PACKET-specific fields for NOTE context" {
+            $result = ConvertFrom-DnsLogLine -Line $noteLineSocketFailure
+
+            $result.PacketId | Should -BeNullOrEmpty
+            $result.Protocol | Should -BeNullOrEmpty
+            $result.Direction | Should -BeNullOrEmpty
+            $result.RemoteIP | Should -BeNullOrEmpty
+            $result.Xid | Should -BeNullOrEmpty
+            $result.QueryResponse | Should -BeNullOrEmpty
+            $result.Opcode | Should -BeNullOrEmpty
+            $result.FlagsHex | Should -BeNullOrEmpty
+            $result.FlagsChar | Should -BeNullOrEmpty
+            $result.ResponseCode | Should -BeNullOrEmpty
+            $result.QuestionType | Should -BeNullOrEmpty
+            $result.QuestionName | Should -BeNullOrEmpty
+        }
+
+        It "Should populate Information field for NOTE context" {
+            $result = ConvertFrom-DnsLogLine -Line $noteLineSocketFailure
+
+            $result.Information | Should -Not -BeNullOrEmpty
+            $result.Information | Should -BeOfType [string]
+            $result.Information.Length | Should -BeGreaterThan 0
+        }
+
+        It "Should correctly identify context as NOTE" {
+            $result = ConvertFrom-DnsLogLine -Line $noteLineSocketFailure
+
+            $result.Context | Should -Be 'NOTE'
+        }
+    }
+
+    Context "ContextFilter - Filtering Behavior" {
+        BeforeAll {
+            $packetLine = "1/20/2026 11:00:16 PM 0FE0 PACKET  000002C53117D990 UDP Rcv 10.0.0.2        c049   Q [0001   D   NOERROR] A      (7)example(3)com(0)"
+            $eventLine = "1/20/2026 11:00:18 PM 0518 EVENT   The DNS server has started."
+            $noteLine = "1/20/2026 11:00:18 PM 5C8 Note: got GQCS failure on a dead socket context status=995, socket=612, pcon=00000020F4B18490, state=-1, IP=::"
+        }
+
+        It "Should return PACKET line when ContextFilter is 'All'" {
+            $result = ConvertFrom-DnsLogLine -Line $packetLine -ContextFilter 'All'
+
+            $result | Should -Not -BeNullOrEmpty
+            $result.Context | Should -Be 'PACKET'
+        }
+
+        It "Should return EVENT line when ContextFilter is 'All'" {
+            $result = ConvertFrom-DnsLogLine -Line $eventLine -ContextFilter 'All'
+
+            $result | Should -Not -BeNullOrEmpty
+            $result.Context | Should -Be 'EVENT'
+        }
+
+        It "Should return NOTE line when ContextFilter is 'All'" {
+            $result = ConvertFrom-DnsLogLine -Line $noteLine -ContextFilter 'All'
+
+            $result | Should -Not -BeNullOrEmpty
+            $result.Context | Should -Be 'NOTE'
+        }
+
+        It "Should return PACKET line when ContextFilter is 'Packet'" {
+            $result = ConvertFrom-DnsLogLine -Line $packetLine -ContextFilter 'Packet'
+
+            $result | Should -Not -BeNullOrEmpty
+            $result.Context | Should -Be 'PACKET'
+        }
+
+        It "Should return null for EVENT line when ContextFilter is 'Packet'" {
+            $result = ConvertFrom-DnsLogLine -Line $eventLine -ContextFilter 'Packet'
+
+            $result | Should -BeNullOrEmpty
+        }
+
+        It "Should return null for NOTE line when ContextFilter is 'Packet'" {
+            $result = ConvertFrom-DnsLogLine -Line $noteLine -ContextFilter 'Packet'
+
+            $result | Should -BeNullOrEmpty
+        }
+
+        It "Should return null for PACKET line when ContextFilter is 'Event'" {
+            $result = ConvertFrom-DnsLogLine -Line $packetLine -ContextFilter 'Event'
+
+            $result | Should -BeNullOrEmpty
+        }
+
+        It "Should return EVENT line when ContextFilter is 'Event'" {
+            $result = ConvertFrom-DnsLogLine -Line $eventLine -ContextFilter 'Event'
+
+            $result | Should -Not -BeNullOrEmpty
+            $result.Context | Should -Be 'EVENT'
+        }
+
+        It "Should return null for NOTE line when ContextFilter is 'Event'" {
+            $result = ConvertFrom-DnsLogLine -Line $noteLine -ContextFilter 'Event'
+
+            $result | Should -BeNullOrEmpty
+        }
+
+        It "Should return null for PACKET line when ContextFilter is 'Note'" {
+            $result = ConvertFrom-DnsLogLine -Line $packetLine -ContextFilter 'Note'
+
+            $result | Should -BeNullOrEmpty
+        }
+
+        It "Should return null for EVENT line when ContextFilter is 'Note'" {
+            $result = ConvertFrom-DnsLogLine -Line $eventLine -ContextFilter 'Note'
+
+            $result | Should -BeNullOrEmpty
+        }
+
+        It "Should return NOTE line when ContextFilter is 'Note'" {
+            $result = ConvertFrom-DnsLogLine -Line $noteLine -ContextFilter 'Note'
+
+            $result | Should -Not -BeNullOrEmpty
+            $result.Context | Should -Be 'NOTE'
+        }
+
+        It "Should use 'All' as default when ContextFilter is not specified" {
+            $resultPacket = ConvertFrom-DnsLogLine -Line $packetLine
+            $resultEvent = ConvertFrom-DnsLogLine -Line $eventLine
+            $resultNote = ConvertFrom-DnsLogLine -Line $noteLine
+
+            $resultPacket | Should -Not -BeNullOrEmpty
+            $resultEvent | Should -Not -BeNullOrEmpty
+            $resultNote | Should -Not -BeNullOrEmpty
+        }
+    }
+
+    Context "Context Type Edge Cases" {
+        It "Should return null for unknown context type" {
+            $unknownContextLine = "1/20/2026 11:00:16 PM 0FE0 UNKNOWN  Some unknown data here"
+            $result = ConvertFrom-DnsLogLine -Line $unknownContextLine
+
+            $result | Should -BeNullOrEmpty
+        }
+
+        It "Should handle EVENT with no information text" {
+            $emptyEventLine = "1/20/2026 11:00:18 PM 0518 EVENT   "
+            $result = ConvertFrom-DnsLogLine -Line $emptyEventLine
+
+            $result | Should -Not -BeNullOrEmpty
+            $result.Context | Should -Be 'EVENT'
+            ($result.Information | Measure-Object -Character).Characters | Should -BeLessOrEqual 1
+        }
+
+        It "Should handle NOTE with no information text after colon" {
+            $emptyNoteLine = "1/20/2026 11:00:18 PM 5C8 Note: "
+            $result = ConvertFrom-DnsLogLine -Line $emptyNoteLine
+
+            $result | Should -Not -BeNullOrEmpty
+            $result.Context | Should -Be 'NOTE'
+            ($result.Information | Measure-Object -Character).Characters | Should -BeLessOrEqual 1
+        }
+
+        It "Should correctly parse EVENT with special characters in message" {
+            $specialCharLine = "1/20/2026 11:00:18 PM 0518 EVENT   Zone 'example.com' loaded: file=C:\Windows\System32\dns\example.com.dns"
+            $result = ConvertFrom-DnsLogLine -Line $specialCharLine
+
+            $result | Should -Not -BeNullOrEmpty
+            $result.Context | Should -Be 'EVENT'
+            $result.Information | Should -Be "Zone 'example.com' loaded: file=C:\Windows\System32\dns\example.com.dns"
+        }
+
+        It "Should correctly parse NOTE with special characters and numbers" {
+            $specialCharLine = "1/20/2026 11:00:18 PM 5C8 Note: error=0x80070057, status=ERROR_INVALID_PARAMETER"
+            $result = ConvertFrom-DnsLogLine -Line $specialCharLine
+
+            $result | Should -Not -BeNullOrEmpty
+            $result.Context | Should -Be 'NOTE'
+            $result.Information | Should -Be 'error=0x80070057, status=ERROR_INVALID_PARAMETER'
         }
     }
 }
