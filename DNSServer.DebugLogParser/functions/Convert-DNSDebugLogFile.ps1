@@ -8,16 +8,16 @@
         in Excel, Power BI, SQL databases, or SIEM tools. Designed for security analysis, performance
         monitoring, troubleshooting, and compliance reporting.
 
-        The cmdlet parses all 17 fields from DNS debug logs including date/time, protocol, client IP,
-        query type, domain names, response codes, flags, event information, and computer name. It generates
-        structured CSV output with an optional statistics summary aggregating activity by client, protocol,
-        and query type.
+        The cmdlet parses DNS debug logs and writes a consistent CSV output for analysis.
+        The CSV output contains 18 columns, including an `Information` column for event/diagnostic text,
+        an optional `Details` JSON column for Packet detail blocks, and an always-present `ComputerName`
+        column (empty unless specified).
 
         KEY FEATURES:
         - High-performance parsing optimized for large files (100MB+)
         - Customizable CSV delimiter (default: semicolon)
         - Optional statistical summaries with aggregated metrics
-        - Context filtering (PACKET, EVENT, Note) to focus on specific log entry types
+        - Context filtering (Packet, Event, Note, and additional contexts) to focus on specific log entry types
         - Culture-aware date parsing and formatting for international servers
         - Pipeline support for batch processing multiple files
         - Optional compression of output files (ZIP format)
@@ -209,7 +209,10 @@
         PS C:\> Convert-DNSDebugLogFile -InputFile "C:\Logs\dns.log"
 
         Converts the DNS debug log using default settings (both data and statistics files with semicolon delimiter).
-        Output: C:\Logs\dns.csv and C:\Logs\dns_statistic.csv
+        Output:
+        - C:\Logs\dns.csv
+        - C:\Logs\dns_Statistic.csv
+        - C:\Logs\dns_PacketStatistic.csv
 
     .EXAMPLE
         PS C:\> Convert-DNSDebugLogFile -InputFile "C:\Logs\dns.log" -OutputType CSV
@@ -221,7 +224,9 @@
         PS C:\> Convert-DNSDebugLogFile -InputFile "C:\Logs\dns.log" -OutputType Statistic
 
         Generates only the statistics file with aggregated metrics.
-        Output: C:\Logs\dns_statistic.csv
+        Output:
+        - C:\Logs\dns_Statistic.csv
+        - C:\Logs\dns_PacketStatistic.csv
 
     .EXAMPLE
         PS C:\> Convert-DNSDebugLogFile -InputFile "C:\Logs\dns.log" -OutputFile "C:\Output\parsed.csv"
@@ -233,7 +238,10 @@
         PS C:\> Convert-DNSDebugLogFile -InputFile "C:\Logs\dns.log" -Delimiter "," -ComputerName "DNS01" -OutputType Both
 
         Converts with comma delimiter and adds ComputerName column with value "DNS01".
-        Output: C:\Logs\dns.csv and C:\Logs\dns_statistic.csv with ComputerName column
+        Output:
+        - C:\Logs\dns.csv
+        - C:\Logs\dns_Statistic.csv
+        - C:\Logs\dns_PacketStatistic.csv
 
     .EXAMPLE
         PS C:\> Get-ChildItem "C:\Logs\*.log" | Convert-DNSDebugLogFile -OutputType Both
@@ -245,7 +253,7 @@
         PS C:\> Convert-DNSDebugLogFile -InputFile "C:\Logs\dns.log" -CompressOutput
 
         Converts and compresses output to ZIP archive.
-        Output: C:\Logs\dns.zip (containing dns.csv and dns_statistic.csv)
+        Output: C:\Logs\dns.zip (containing dns.csv + statistics files)
 
     .EXAMPLE
         PS C:\> Convert-DNSDebugLogFile -InputFile "C:\Logs\dns.log" -RemoveSourceFile -Verbose

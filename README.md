@@ -9,13 +9,16 @@
 DNSServer.DebugLogParser transforms Windows DNS Server debug logs into structured, analyzable data. The module parses complex debug log files and converts them into CSV format for easy analysis in Excel, Power BI, SQL databases, or SIEM tools. It's designed for security analysis, performance monitoring, troubleshooting, and compliance reporting.
 
 ## Key Features
-- Parse all 16 fields from DNS debug logs (date, time, protocol, client IP, query type, response codes, etc.)
+- Parse DNS Server debug logs into a consistent 18-column CSV output
 - Generate structured CSV output with customizable delimiters
-- Create optional statistical summaries aggregating activity by client, protocol, and query type
+- Optional statistics output (daily context counts and daily packet aggregations)
 - ComputerName column always included for consistent multi-server consolidation
 - Process single files or batches via pipeline
 - High-performance parsing optimized for large files (100MB+)
-- Context filtering to focus on PACKET, EVENT, or NOTE entries
+- Packet detail blocks captured into a structured `Details` JSON column (optional)
+- `NoDetailsParsing` switch to keep `Details` empty for performance
+- Multi-line record support (Packet detail blocks and indented continuation lines)
+- Context filtering to focus on Packet, Event, Note, and additional contexts
 - Culture-aware date parsing and formatting for international servers
 - Optional automatic compression of output files to save disk space
 - Optional removal of source files after successful processing
@@ -63,12 +66,15 @@ Convert-DNSDebugLogFile -InputFile "C:\Logs\dns.log" -OutputType Both
 
 # Output:
 # - C:\Logs\dns.csv (full parsed data)
-# - C:\Logs\dns_statistic.csv (aggregated statistics by client, protocol, query type)
+# - C:\Logs\dns_Statistic.csv (daily counts by context)
+# - C:\Logs\dns_PacketStatistic.csv (daily Packet counts by client/protocol/direction/type)
 
 # Generate only statistics (no full CSV)
 Convert-DNSDebugLogFile -InputFile "C:\Logs\dns.log" -OutputType Statistic
 
-# Output: C:\Logs\dns_statistic.csv (statistics only)
+# Output:
+# - C:\Logs\dns_Statistic.csv
+# - C:\Logs\dns_PacketStatistic.csv
 ```
 
 #### Custom Output Location and Delimiter
@@ -137,7 +143,11 @@ Convert-DNSDebugLogFile -InputFile "C:\Logs\dns.log" `
     -OutputType Both `
     -CompressOutput
 
-# Output: C:\Logs\dns.zip (contains both dns.csv and dns_statistic.csv)
+# Output: C:\Logs\dns.zip (contains dns.csv + statistics files)
+# Note: When -OutputType Both is used, the ZIP contains:
+# - dns.csv
+# - dns_Statistic.csv
+# - dns_PacketStatistic.csv
 
 # Remove source log after successful processing (use with caution!)
 Convert-DNSDebugLogFile -InputFile "C:\Logs\dns.log" `
@@ -211,38 +221,53 @@ foreach ($server in $servers) {
 
 #### CSV Data File Fields
 
-The parsed CSV contains 17 fields extracted from each DNS log entry:
+The parsed CSV contains 18 columns for each DNS log entry:
 
-| Field        | Description                                                           | Example                     |
-| ------------ | --------------------------------------------------------------------- | --------------------------- |
-| DateTime     | Timestamp of the DNS query/response (format depends on OutputCulture) | 2026-01-23 14:32:15         |
-| ThreadId     | DNS Server thread ID that processed the request                       | 0ABC                        |
-| Context      | Internal context identifier                                           | PACKET                      |
-| PacketId     | Internal packet identifier                                            | 0000012345678ABC            |
-| Protocol     | UDP or TCP                                                            | UDP                         |
-| Direction    | Snd (Send/Response) or Rcv (Receive/Query)                            | Rcv                         |
-| ClientIP     | IP address of the client making the request                           | 192.168.1.100               |
-| Xid          | DNS transaction ID (hexadecimal)                                      | F8A3                        |
-| Type         | Query or Response for PACKET context (R=Response, blank=Query; empty for non-PACKET) | R                           |
-| Opcode       | Q=Standard Query, N=Notify, U=Update, ?=Unknown                       | Q                           |
-| FlagsHex     | DNS flags in hexadecimal                                              | 0001                        |
-| FlagsChar    | DNS flags as characters (A=Authoritative, T=Truncated, D/R=Recursion) | DR                          |
-| ResponseCode | DNS response code (NOERROR, NXDOMAIN, SERVFAIL, etc.)                 | NOERROR                     |
-| QuestionType | DNS query type (A, AAAA, CNAME, MX, PTR, SOA, SRV, etc.)              | A                           |
-| QuestionName | Domain name queried                                                   | www.example.com             |
-| Information  | Event/diagnostic information (populated for EVENT and Note contexts)  | The DNS server has started. |
-| ComputerName | Server identifier (populated if -ComputerName parameter specified)    | DNS01                       |
+| Field        | Description                                                                 | Example                     |
+| ------------ | --------------------------------------------------------------------------- | --------------------------- |
+| DateTime     | Timestamp of the DNS query/response (format depends on OutputCulture)       | 2026-01-23 14:32:15         |
+| ThreadId     | DNS Server thread ID that processed the request                             | 0ABC                        |
+| Context      | Context identifier (Packet, Event, Note, etc.)                              | Packet                      |
+| PacketId     | Internal packet identifier                                                  | 0000012345678ABC            |
+| Protocol     | UDP or TCP                                                                  | UDP                         |
+| Direction    | Snd (Send/Response) or Rcv (Receive/Query)                                  | Rcv                         |
+| ClientIP     | IP address of the client making the request                                 | 192.168.1.100               |
+| Xid          | DNS transaction ID (hexadecimal)                                            | F8A3                        |
+| Type         | Query or Response for Packet context (Response/Query; empty for non-Packet) | Response                    |
+| Opcode       | Q=Standard Query, N=Notify, U=Update, ?=Unknown                             | Q                           |
+| FlagsHex     | DNS flags in hexadecimal                                                    | 0001                        |
+| FlagsChar    | DNS flags as characters (A=Authoritative, T=Truncated, D/R=Recursion)       | DR                          |
+| ResponseCode | DNS response code (NOERROR, NXDOMAIN, SERVFAIL, etc.)                       | NOERROR                     |
+| QuestionType | DNS query type (A, AAAA, CNAME, MX, PTR, SOA, SRV, etc.)                    | A                           |
+| QuestionName | Domain name queried                                                         | www.example.com             |
+| Information  | Event/diagnostic information (or Packet detail header line)                 | The DNS server has started. |
+| Details      | JSON data for Packet detail blocks (empty otherwise)                        | {"Message":{...}}           |
+| ComputerName | Server identifier (populated if -ComputerName parameter specified)          | DNS01                       |
 
 #### Statistics File Fields
 
-The optional statistics file aggregates DNS activity and contains these fields:
+When statistics are generated, two separate files are created:
 
-| Field        | Description                               | Example       |
-| ------------ | ----------------------------------------- | ------------- |
-| ClientIP     | Client IP address                         | 192.168.1.100 |
-| Protocol     | UDP or TCP                                | UDP           |
-| QuestionType | DNS query type (A, AAAA, etc.)            | A             |
-| Count        | Number of queries matching these criteria | 1523          |
+1) `*_Statistic.csv` (daily counts by context)
+
+| Field        | Description                        | Example    |
+| ------------ | ---------------------------------- | ---------- |
+| Date         | Date (yyyy-MM-dd)                  | 2026-01-23 |
+| Context      | Context name                       | Packet     |
+| Count        | Number of records for that day     | 1523       |
+| ComputerName | Server identifier (optional value) | DNS01      |
+
+2) `*_PacketStatistic.csv` (daily Packet aggregations)
+
+| Field        | Description                        | Example       |
+| ------------ | ---------------------------------- | ------------- |
+| Date         | Date (yyyy-MM-dd)                  | 2026-01-23    |
+| ClientIP     | Client IP address                  | 192.168.1.100 |
+| Protocol     | UDP or TCP                         | UDP           |
+| Direction    | Rcv or Snd                         | Rcv           |
+| QuestionType | DNS query type (A, AAAA, etc.)     | A             |
+| Count        | Number of records for that day     | 1523          |
+| ComputerName | Server identifier (optional value) | DNS01         |
 
 This aggregated view helps identify:
 - Most active DNS clients
@@ -279,7 +304,7 @@ Track DNS query volumes over time to identify patterns and capacity needs:
 Convert-DNSDebugLogFile -InputFile "C:\Logs\dns.log" -OutputType Statistic
 
 # Analyze query distribution
-$stats = Import-Csv "C:\Logs\dns_statistic.csv" -Delimiter ";"
+$stats = Import-Csv "C:\Logs\dns_PacketStatistic.csv" -Delimiter ";"
 $stats | Group-Object QuestionType |
     Select-Object Name, @{N='TotalQueries';E={($_.Group | Measure-Object Count -Sum).Sum}} |
     Sort-Object TotalQueries -Descending

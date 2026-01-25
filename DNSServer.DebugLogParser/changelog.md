@@ -1,6 +1,6 @@
 ﻿# Changelog
 
-## 1.2.0 (2026-01-25)
+## 1.2.0.0 (2026-01-25)
 
 ### Added
 * **NEW**: Multi-line record processing for DNS PACKET detail blocks
@@ -15,7 +15,7 @@
   * Enables deep packet analysis and forensic investigation of DNS queries/responses
 * **NEW**: `NoDetailsParsing` switch parameter for performance optimization
   * Skips expensive JSON parsing of PACKET detail blocks
-  * Can improve processing speed by 30-50% for logs with many detail blocks
+  * ***Can improve*** processing speed by **30-50%** for logs with many detail blocks
   * Use when processing very large files (100MB+) and detailed packet structure is not needed
   * Detail blocks are still collected in Information column, but Details column remains empty
 * **NEW**: Multi-line continuation support for non-PACKET contexts
@@ -24,10 +24,11 @@
   * Preserves complete error messages, zone updates, and diagnostic output
 * **NEW**: `ContextFilter` recognizes additional context types: `DSPoll`, `Init`, `Lookup`, `Recurse`, `Remote`, `Tombstone`
   * Effect: `Convert-DNSDebugLogFile` can now include/exclude these diagnostic and lifecycle entries via `-ContextFilter`
-* **NEW**: Internal function `ConvertTo-PacketDetailJson` for efficient JSON generation
-  * Parses detail block lines into hierarchical structured data
-  * Optimized for performance with manual parsing instead of regex
-  * Supports nested structures (Message → Flags → sub-properties, DNS sections → records)
+* **NEW**: Statistics output now includes two dedicated files
+  * `_Statistic.csv`: Daily record counts per context type (Date, Context, Count, ComputerName)
+  * `_PacketStatistic.csv`: Daily PACKET counts by client/protocol/direction/type (Date, ClientIP, Protocol, Direction, QuestionType, Count, ComputerName)
+  * Benefit: More focused reporting (operational context volume vs. DNS traffic breakdown)
+* JSON generation for PACKET detail blocks is optimized for performance (manual parsing instead of regex)
 
 ### Changed
 * **BREAKING**: CSV output now includes 18 columns (added `Details` column before `ComputerName`)
