@@ -234,7 +234,13 @@ Describe "Convert-DNSDebugLogFile - Parameter Contract" {
             $validValues | Should -Contain 'Packet'
             $validValues | Should -Contain 'Event'
             $validValues | Should -Contain 'Note'
-            $validValues.Count | Should -Be 4
+            $validValues | Should -Contain 'DSPoll'
+            $validValues | Should -Contain 'Init'
+            $validValues | Should -Contain 'Lookup'
+            $validValues | Should -Contain 'Recurse'
+            $validValues | Should -Contain 'Remote'
+            $validValues | Should -Contain 'Tombstone'
+            $validValues.Count | Should -Be 10
         }
 
         It "Should have ContextFilter parameter with default value of 'All'" {

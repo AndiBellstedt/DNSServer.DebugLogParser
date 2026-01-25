@@ -60,7 +60,7 @@ Describe "ConvertTo-Fqdn - Parameter Contract" {
                 }, $true) | Select-Object -First 1
         }
 
-        It "Should have EncodedName as mandatory parameter" {
+        It "Should have EncodedName parameter that is optional" {
             $encodedNameParam = $paramBlock.Parameters | Where-Object {
                 $_.Name.VariablePath.UserPath -eq 'EncodedName'
             }
@@ -68,10 +68,10 @@ Describe "ConvertTo-Fqdn - Parameter Contract" {
             $encodedNameParam | Should -Not -BeNullOrEmpty
             $encodedNameParam.StaticType.Name | Should -Be 'String'
 
-            # Check for Mandatory attribute
+            # Check for Mandatory attribute (should be optional)
             $paramAttr = $encodedNameParam.Attributes | Where-Object { $_.TypeName.Name -eq 'Parameter' }
             $mandatory = $paramAttr.NamedArguments | Where-Object { $_.ArgumentName -eq 'Mandatory' }
-            $mandatory.Argument.Extent.Text | Should -Be '$true'
+            $mandatory | Should -BeNullOrEmpty
         }
     }
 
