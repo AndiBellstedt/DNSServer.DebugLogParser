@@ -18,15 +18,14 @@
     .NOTES
         Internal function not exported from module.
 
-        Version:    1.0.0
+        Version:    1.0.1
         Author:     Andi Bellstedt
-        Date:       2026-01-23
+        Date:       2026-01-25
 
     #>
     [CmdletBinding()]
     [OutputType([string])]
     param(
-        [Parameter(Mandatory = $true)]
         [string]
         $EncodedName
     )
