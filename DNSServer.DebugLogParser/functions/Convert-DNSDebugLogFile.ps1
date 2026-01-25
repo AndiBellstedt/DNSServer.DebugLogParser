@@ -73,14 +73,16 @@
         Specifies the type of output to generate.
 
         Valid values:
-        - 'CSV': Generate only the data file with all parsed log entries (default)
-        - 'Statistic': Generate only the statistics file with aggregated metrics
-        - 'Both': Generate both data and statistics files
+        - 'CSV': Generate only the data file with all parsed log entries
+        - 'Statistic': Generate only the statistics files with aggregated metrics
+        - 'Both': Generate both data and statistics files (default)
 
         Default: Both
 
-        Statistics provide aggregated counts by client IP, protocol, direction, and query type, along with
-        date range for each unique combination.
+        When statistics are generated, two separate files are created:
+        - '_Statistic.csv': Summary counts per context type per day (Date, Context, Count, ComputerName)
+        - '_PacketStatistic.csv': Detailed PACKET counts per day by client IP, protocol, direction,
+          and query type (Date, ClientIP, Protocol, Direction, QuestionType, Count, ComputerName)
 
     .PARAMETER SkipHeaderValidation
         Bypasses the DNS debug log header validation check.
@@ -117,20 +119,27 @@
         Example: Input 'dns.log' generates 'dns.csv' compressed to 'dns.zip', then 'dns.csv' is removed.
 
     .PARAMETER ContextFilter
-        Filters which log entry types to include in the output.
+        Filters which log entry types to include in the output. Accepts single or multiple values.
 
         DNS debug logs contain different context types:
         - PACKET: DNS query and response packet information (primary data)
         - EVENT: DNS server events (e.g., "The DNS server has started.")
         - Note: Diagnostic notes and warnings (e.g., socket errors, internal states)
+        - DSPoll, Init, Lookup, Recurse, Remote, Tombstone: Additional context types
 
         Valid values:
         - 'All': Include all context types (default)
         - 'Packet': Include only PACKET entries (DNS queries/responses)
         - 'Event': Include only EVENT entries (server events)
         - 'Note': Include only Note entries (diagnostic information)
+        - Any combination: Specify multiple values to include specific context types
 
         Default: All
+
+        Examples:
+        - 'Packet' filters to only DNS traffic
+        - 'Packet','Event' includes both DNS traffic and server events
+        - 'Note','Event' includes diagnostic notes and server events
 
         Note: When filtering to 'Event' or 'Note', only DateTime, ThreadId, Context, and Information
         columns will contain data. Other columns (Protocol, ClientIP, etc.) will be empty.
@@ -257,6 +266,12 @@
         Use to focus analysis on actual DNS traffic.
 
     .EXAMPLE
+        PS C:\> Convert-DNSDebugLogFile -InputFile "C:\Logs\dns.log" -ContextFilter 'Packet','Event'
+
+        Converts both DNS query/response packets and server events, excluding Note and other entries.
+        Use to analyze DNS traffic along with server event context.
+
+    .EXAMPLE
         PS C:\> Get-ChildItem "C:\Logs\*.log" | Convert-DNSDebugLogFile -RemoveSourceFile -CompressOutput
 
         Automated log archival: processes all logs, compresses output, and removes source files.
@@ -270,7 +285,7 @@
         Use when processing very large files and detailed packet structure is not needed.
 
     .NOTES
-        Version  : 1.4.0.0
+        Version  : 1.7.0.0
         Author   : Andi Bellstedt, Copilot
         Date     : 2026-01-25
         Keywords : Microsoft Windows Server, DNSServer, DNS, DebugLog, LogParser
@@ -327,8 +342,8 @@
 
         [Parameter()]
         [ValidateSet('All', 'Packet', 'Event', 'Note', 'DSPoll', 'Init', 'Lookup', 'Recurse', 'Remote', 'Tombstone')]
-        [string]
-        $ContextFilter = 'All',
+        [string[]]
+        $ContextFilter = @('All'),
 
         [Parameter()]
         [ArgumentCompleter({
@@ -509,10 +524,14 @@
             $lineCount = 0
             $parsedCount = 0
 
-            # Initialize statistics dictionary if requested (using Dictionary for performance)
-            $statistics = $null
+            # Initialize statistics dictionaries if requested (using Dictionary for performance)
+            # contextStatistics: summarizes all records by Date|Context
+            # packetStatistics: detailed PACKET records by Date|ClientIP|Protocol|Direction|QuestionType
+            $contextStatistics = $null
+            $packetStatistics = $null
             if ($OutputType -eq 'Statistic' -or $OutputType -eq 'Both') {
-                $statistics = [System.Collections.Generic.Dictionary[string, System.Collections.Generic.List[object]]]::new()
+                $contextStatistics = [System.Collections.Generic.Dictionary[string, int]]::new()
+                $packetStatistics = [System.Collections.Generic.Dictionary[string, int]]::new()
             }
 
             # Determine if we need to write CSV data
@@ -719,18 +738,27 @@
                     $parsedCount++
 
                     #region -- -- Collect statistics
-                    if ($null -ne $statistics) {
-                        # Create composite key: ClientIP|Protocol|Direction|QuestionType
-                        $statKey = $parsed.RemoteIP + '|' + $parsed.Protocol + '|' + $parsed.Direction + '|' + $parsed.QuestionType
+                    if ($null -ne $contextStatistics) {
+                        # Extract date portion only (no time) for daily grouping
+                        $dateOnly = $parsed.DateTime.Date.ToString('yyyy-MM-dd', [System.Globalization.CultureInfo]::InvariantCulture)
 
-                        if ($statistics.ContainsKey($statKey)) {
-                            $entry = $statistics[$statKey]
-                            $entry[0]++  # Count
-                            if ($parsed.DateTime -lt $entry[1]) { $entry[1] = $parsed.DateTime }  # DateMin
-                            if ($parsed.DateTime -gt $entry[2]) { $entry[2] = $parsed.DateTime }  # DateMax
+                        # Context statistics: count all records by Date|Context
+                        $contextKey = $dateOnly + '|' + $parsed.Context
+                        if ($contextStatistics.ContainsKey($contextKey)) {
+                            $contextStatistics[$contextKey]++
                         } else {
-                            # [Count, DateMin, DateMax]
-                            $statistics[$statKey] = [System.Collections.Generic.List[object]]@(1, $parsed.DateTime, $parsed.DateTime)
+                            $contextStatistics[$contextKey] = 1
+                        }
+
+                        # Packet statistics: count only standard PACKET records (with RemoteIP) by Date|ClientIP|Protocol|Direction|QuestionType
+                        # Info-only PACKET records (e.g., "Response packet does not match") have empty RemoteIP and are excluded
+                        if ($parsed.Context -eq 'Packet' -and -not [string]::IsNullOrEmpty($parsed.RemoteIP)) {
+                            $packetKey = $dateOnly + '|' + $parsed.RemoteIP + '|' + $parsed.Protocol + '|' + $parsed.Direction + '|' + $parsed.QuestionType
+                            if ($packetStatistics.ContainsKey($packetKey)) {
+                                $packetStatistics[$packetKey]++
+                            } else {
+                                $packetStatistics[$packetKey] = 1
+                            }
                         }
                     }
                     #endregion -- -- Collect statistics
@@ -742,33 +770,64 @@
                     Write-Verbose "Successfully exported $parsedCount DNS log entries to: '$currentOutputPath'"
                 }
 
-                # Write statistics file if requested
-                if ($null -ne $statistics -and $statistics.Count -gt 0) {
-                    Write-Verbose "Generating statistics file with $($statistics.Count) unique groups"
-                    $statPath = [System.IO.Path]::Combine(
+                # Write context statistics file if requested (_Statistic)
+                if ($null -ne $contextStatistics -and $contextStatistics.Count -gt 0) {
+                    Write-Verbose "Generating context statistics file with $($contextStatistics.Count) unique groups"
+                    $contextStatPath = [System.IO.Path]::Combine(
                         [System.IO.Path]::GetDirectoryName($currentOutputPath),
-                        [System.IO.Path]::GetFileNameWithoutExtension($currentOutputPath) + '_statistic' + [System.IO.Path]::GetExtension($currentOutputPath)
+                        [System.IO.Path]::GetFileNameWithoutExtension($currentOutputPath) + '_Statistic' + [System.IO.Path]::GetExtension($currentOutputPath)
                     )
 
                     # Check if we should process (WhatIf support)
-                    if ($PSCmdlet.ShouldProcess($statPath, "Create statistics output file")) {
+                    if ($PSCmdlet.ShouldProcess($contextStatPath, "Create context statistics output file")) {
                         $statWriter = $null
                         try {
-                            $statWriter = [System.IO.StreamWriter]::new($statPath, $false, [System.Text.Encoding]::UTF8, 65536)
+                            $statWriter = [System.IO.StreamWriter]::new($contextStatPath, $false, [System.Text.Encoding]::UTF8, 65536)
 
-                            # Write statistics header (ComputerName is always included at the end)
-                            $statWriter.WriteLine('ClientIP' + $Delimiter + 'Protocol' + $Delimiter + 'Direction' + $Delimiter + 'QuestionType' + $Delimiter + 'Count' + $Delimiter + 'DateMin' + $Delimiter + 'DateMax' + $Delimiter + 'ComputerName')
+                            # Write context statistics header
+                            $statWriter.WriteLine('Date' + $Delimiter + 'Context' + $Delimiter + 'Count' + $Delimiter + 'ComputerName')
 
-                            # Write statistics data
-                            foreach ($kvp in $statistics.GetEnumerator()) {
+                            # Write context statistics data (sort by Date, then Context for better readability)
+                            foreach ($kvp in ($contextStatistics.GetEnumerator() | Sort-Object -Property Key)) {
                                 $keyParts = $kvp.Key.Split('|')
-                                $dateMinFormatted = $kvp.Value[1].ToString($outputDateTimeFormat, $OutputCulture)
-                                $dateMaxFormatted = $kvp.Value[2].ToString($outputDateTimeFormat, $OutputCulture)
-                                $statLine = $keyParts[0] + $Delimiter + $keyParts[1] + $Delimiter + $keyParts[2] + $Delimiter + $keyParts[3] + $Delimiter + $kvp.Value[0].ToString() + $Delimiter + $dateMinFormatted + $Delimiter + $dateMaxFormatted + $Delimiter + $computerNameValue
+                                # Key format: Date|Context
+                                $statLine = $keyParts[0] + $Delimiter + $keyParts[1] + $Delimiter + $kvp.Value.ToString() + $Delimiter + $computerNameValue
                                 $statWriter.WriteLine($statLine)
                             }
 
-                            Write-Verbose "Successfully exported statistics to: '$statPath' ($($statistics.Count) unique groups)"
+                            Write-Verbose "Successfully exported context statistics to: '$contextStatPath' ($($contextStatistics.Count) unique groups)"
+                        } finally {
+                            if ($null -ne $statWriter) { $statWriter.Dispose() }
+                        }
+                    }
+                }
+
+                # Write packet statistics file if requested (_PacketStatistic)
+                if ($null -ne $packetStatistics -and $packetStatistics.Count -gt 0) {
+                    Write-Verbose "Generating packet statistics file with $($packetStatistics.Count) unique groups"
+                    $packetStatPath = [System.IO.Path]::Combine(
+                        [System.IO.Path]::GetDirectoryName($currentOutputPath),
+                        [System.IO.Path]::GetFileNameWithoutExtension($currentOutputPath) + '_PacketStatistic' + [System.IO.Path]::GetExtension($currentOutputPath)
+                    )
+
+                    # Check if we should process (WhatIf support)
+                    if ($PSCmdlet.ShouldProcess($packetStatPath, "Create packet statistics output file")) {
+                        $statWriter = $null
+                        try {
+                            $statWriter = [System.IO.StreamWriter]::new($packetStatPath, $false, [System.Text.Encoding]::UTF8, 65536)
+
+                            # Write packet statistics header (ComputerName is always included at the end)
+                            $statWriter.WriteLine('Date' + $Delimiter + 'ClientIP' + $Delimiter + 'Protocol' + $Delimiter + 'Direction' + $Delimiter + 'QuestionType' + $Delimiter + 'Count' + $Delimiter + 'ComputerName')
+
+                            # Write packet statistics data (sort by Date, then ClientIP for better readability)
+                            foreach ($kvp in ($packetStatistics.GetEnumerator() | Sort-Object -Property Key)) {
+                                $keyParts = $kvp.Key.Split('|')
+                                # Key format: Date|ClientIP|Protocol|Direction|QuestionType
+                                $statLine = $keyParts[0] + $Delimiter + $keyParts[1] + $Delimiter + $keyParts[2] + $Delimiter + $keyParts[3] + $Delimiter + $keyParts[4] + $Delimiter + $kvp.Value.ToString() + $Delimiter + $computerNameValue
+                                $statWriter.WriteLine($statLine)
+                            }
+
+                            Write-Verbose "Successfully exported packet statistics to: '$packetStatPath' ($($packetStatistics.Count) unique groups)"
                         } finally {
                             if ($null -ne $statWriter) { $statWriter.Dispose() }
                         }
@@ -788,13 +847,22 @@
                 if ($writeCsvData -and (Test-Path -Path $currentOutputPath)) {
                     $filesToCompress += $currentOutputPath
                 }
-                if ($null -ne $statistics -and $statistics.Count -gt 0) {
-                    $statPath = [System.IO.Path]::Combine(
+                if ($null -ne $contextStatistics -and $contextStatistics.Count -gt 0) {
+                    $contextStatPath = [System.IO.Path]::Combine(
                         [System.IO.Path]::GetDirectoryName($currentOutputPath),
-                        [System.IO.Path]::GetFileNameWithoutExtension($currentOutputPath) + '_statistic' + [System.IO.Path]::GetExtension($currentOutputPath)
+                        [System.IO.Path]::GetFileNameWithoutExtension($currentOutputPath) + '_Statistic' + [System.IO.Path]::GetExtension($currentOutputPath)
                     )
-                    if (Test-Path -Path $statPath) {
-                        $filesToCompress += $statPath
+                    if (Test-Path -Path $contextStatPath) {
+                        $filesToCompress += $contextStatPath
+                    }
+                }
+                if ($null -ne $packetStatistics -and $packetStatistics.Count -gt 0) {
+                    $packetStatPath = [System.IO.Path]::Combine(
+                        [System.IO.Path]::GetDirectoryName($currentOutputPath),
+                        [System.IO.Path]::GetFileNameWithoutExtension($currentOutputPath) + '_PacketStatistic' + [System.IO.Path]::GetExtension($currentOutputPath)
+                    )
+                    if (Test-Path -Path $packetStatPath) {
+                        $filesToCompress += $packetStatPath
                     }
                 }
 

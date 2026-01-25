@@ -229,7 +229,7 @@ Describe "Convert-DNSDebugLogFile - Parameter Contract" {
             }
 
             $contextFilterParam | Should -Not -BeNullOrEmpty
-            $contextFilterParam.StaticType.Name | Should -Be 'String'
+            $contextFilterParam.StaticType.Name | Should -Be 'String[]'
 
             # Check for ValidateSet
             $validateSet = $contextFilterParam.Attributes |
@@ -259,7 +259,8 @@ Describe "Convert-DNSDebugLogFile - Parameter Contract" {
 
             $contextFilterParam | Should -Not -BeNullOrEmpty
             $contextFilterParam.DefaultValue | Should -Not -BeNullOrEmpty
-            $contextFilterParam.DefaultValue.Extent.Text | Should -Match "'All'"
+            # Default value for array parameter is @('All')
+            $contextFilterParam.DefaultValue.Extent.Text | Should -Match "@\('All'\)"
         }
     }
 
