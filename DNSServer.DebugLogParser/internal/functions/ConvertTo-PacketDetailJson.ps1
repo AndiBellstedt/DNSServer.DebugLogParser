@@ -14,8 +14,8 @@
         instead of regex for maximum throughput when processing large log files.
 
     .PARAMETER DetailLines
-        An array of detail lines to parse. Each line should already be trimmed of leading
-        indentation whitespace.
+        An array of detail lines to parse. Relative leading indentation must be preserved
+        exactly as in the original log, as the parser uses indentation to determine nesting.
 
     .EXAMPLE
         PS C:\> $detailLines = @(
