@@ -87,7 +87,7 @@ Describe "ConvertFrom-DnsLogLine - Parameter Contract" {
             }
 
             $contextFilterParam | Should -Not -BeNullOrEmpty
-            $contextFilterParam.StaticType.Name | Should -Be 'String'
+            $contextFilterParam.StaticType.Name | Should -Be 'String[]'
 
             # Check for ValidateSet
             $validateSet = $contextFilterParam.Attributes |
@@ -117,7 +117,8 @@ Describe "ConvertFrom-DnsLogLine - Parameter Contract" {
 
             $contextFilterParam | Should -Not -BeNullOrEmpty
             $contextFilterParam.DefaultValue | Should -Not -BeNullOrEmpty
-            $contextFilterParam.DefaultValue.Extent.Text | Should -Match "'All'"
+            # Default value for array parameter is @('All')
+            $contextFilterParam.DefaultValue.Extent.Text | Should -Match "@\('All'\)"
         }
     }
 
@@ -384,8 +385,29 @@ Describe "ConvertFrom-DnsLogLine - Functionality" {
             $result | Should -BeNullOrEmpty
         }
 
-        It "Should handle line with insufficient fields" {
+        It "Should handle PACKET line with insufficient fields as info-only record" {
             $result = ConvertFrom-DnsLogLine -Line "1/20/2026 11:00:16 PM 0FE0 PACKET"
+
+            # PACKET lines with insufficient standard format fields are treated as info-only records
+            $result | Should -Not -BeNullOrEmpty
+            $result.Context | Should -Be 'Packet'
+            $result.RemoteIP | Should -BeNullOrEmpty
+            $result.Protocol | Should -BeNullOrEmpty
+            $result.Information | Should -BeNullOrEmpty
+        }
+
+        It "Should handle PACKET info-only record like 'Response packet does not match'" {
+            $result = ConvertFrom-DnsLogLine -Line "25.01.2026 03:36:22 0EDC PACKET  Response packet 000001923DB025B0 does not match any outstanding query" -Culture 'de-DE'
+
+            $result | Should -Not -BeNullOrEmpty
+            $result.Context | Should -Be 'Packet'
+            $result.RemoteIP | Should -BeNullOrEmpty
+            $result.Protocol | Should -BeNullOrEmpty
+            $result.Information | Should -Be 'Response packet 000001923DB025B0 does not match any outstanding query'
+        }
+
+        It "Should skip orphaned 'Response packet' lines without date prefix" {
+            $result = ConvertFrom-DnsLogLine -Line "Response packet 000001AFB9B9E9D0 does not match any outstanding query"
 
             $result | Should -BeNullOrEmpty
         }

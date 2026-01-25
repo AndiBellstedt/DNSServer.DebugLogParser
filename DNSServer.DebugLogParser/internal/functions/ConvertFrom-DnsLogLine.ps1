@@ -20,9 +20,10 @@
         DNS Server debug logs use the date format of the Windows locale on the source server.
 
     .PARAMETER ContextFilter
-        Filters the log lines by context type.
+        Filters the log lines by context type. Accepts single or multiple values.
         Valid values: 'All', 'Packet', 'Event', 'Note', 'DSPoll', 'Init', 'Lookup', 'Recurse', 'Remote', 'Tombstone'
         Default is 'All' which processes all context types.
+        When multiple values are specified (not including 'All'), only log lines matching one of the specified contexts are returned.
 
     .EXAMPLE
         PS C:\> ConvertFrom-DnsLogLine -Line "20.01.2026 23:00:18 0FE0 PACKET  000002C5307CFCD0 UDP Rcv 10.0.0.2        ede1   Q [0001   D   NOERROR] A      (4)ocsp(8)digicert(3)com(0)"
@@ -87,7 +88,7 @@
     .NOTES
         Internal function not exported from module.
 
-        Version:    1.2.1.1
+        Version:    1.4.0.0
         Author:     Andi Bellstedt, Copilot
         Date:       2026-01-25
         Keywords:   DNS, DebugLog, Parser, LogParser, Internal
@@ -106,8 +107,8 @@
         $Culture = [System.Globalization.CultureInfo]::CurrentCulture,
 
         [ValidateSet('All', 'Packet', 'Event', 'Note', 'DSPoll', 'Init', 'Lookup', 'Recurse', 'Remote', 'Tombstone')]
-        [string]
-        $ContextFilter = 'All'
+        [string[]]
+        $ContextFilter = @('All')
     )
 
     # Skip empty lines
@@ -118,6 +119,9 @@
 
     # Skip lines that starts with "TCP" or "UDP" (non-standard format)
     if ($Line.StartsWith('TCP') -or $Line.StartsWith('UDP')) { return $null }
+
+    # Skip orphaned "Response packet" lines (continuation lines without date prefix)
+    if ($Line.StartsWith('Response packet')) { return $null }
 
     # Minimum line length check (date + time + minimal data)
     if ($Line.Length -lt 25) { return $null }
@@ -219,11 +223,41 @@
     if ($contextRaw -eq 'PACKET') {
         $context = 'Packet'
 
-        # Apply context filter
-        if ($ContextFilter -ne 'All' -and $ContextFilter -ne 'Packet') { return $null }
+        # Apply context filter - check if 'All' is in array or if current context is in filter array
+        if ($ContextFilter -notcontains 'All' -and $ContextFilter -notcontains $context) { return $null }
 
-        # Process PACKET context with existing logic
-        if ($parts.Count -lt 7) { return $null }
+        # Check for information-only PACKET records (e.g., "Response packet XXX does not match any outstanding query")
+        # Standard PACKET format requires at least 7 parts: ThreadId, PACKET, PacketId, Protocol, Direction, RemoteIP, Xid
+        # Information-only packets have format: ThreadId, PACKET, followed by message text
+        # Detect by checking if parts[3] is NOT a valid protocol indicator (UDP/TCP)
+        if ($parts.Count -lt 7 -or ($parts[3] -ne 'UDP' -and $parts[3] -ne 'TCP')) {
+            # Information-only PACKET record - extract everything after "PACKET" as information
+            $packetIndex = $remaining.IndexOf('PACKET')
+            if ($packetIndex -gt -1) {
+                $information = $remaining.Substring($packetIndex + 6).TrimStart()
+            }
+            # Return with empty packet-specific fields but with information populated
+            return [PSCustomObject]@{
+                DateTime      = $dateTime
+                ThreadId      = $threadId
+                Context       = $context
+                PacketId      = $packetId
+                Protocol      = $protocol
+                Direction     = $direction
+                RemoteIP      = $remoteIp
+                Xid           = $xid
+                QueryResponse = $queryResponse
+                Opcode        = $opcode
+                FlagsHex      = $flagsHex
+                FlagsChar     = $flagsChar
+                ResponseCode  = $responseCode
+                QuestionType  = $questionType
+                QuestionName  = $questionName
+                Information   = $information
+            }
+        }
+
+        # Process standard PACKET context
 
         # Field 5: Internal packet identifier
         $packetId = $parts[2]
@@ -301,8 +335,8 @@
         $contextInfo = $contextMap[$contextRaw]
         $context = $contextInfo.Name
 
-        # Apply context filter
-        if ($ContextFilter -ne 'All' -and $ContextFilter -ne $context) { return $null }
+        # Apply context filter - check if 'All' is in array or if current context is in filter array
+        if ($ContextFilter -notcontains 'All' -and $ContextFilter -notcontains $context) { return $null }
 
         # Extract information text (everything after the context keyword with leading whitespace trimmed)
         $keywordIndex = $remaining.IndexOf($contextRaw)
@@ -313,8 +347,8 @@
     } else {
         # Unknown context type - treat as "raw" generic information
 
-        # Apply context filter
-        if ($ContextFilter -ne 'All') { return $null }
+        # Apply context filter - only include unknown types if 'All' is specified
+        if ($ContextFilter -notcontains 'All') { return $null }
 
         $context = $contextRaw
 
