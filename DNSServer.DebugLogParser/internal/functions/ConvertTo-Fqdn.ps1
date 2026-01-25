@@ -18,15 +18,18 @@
     .NOTES
         Internal function not exported from module.
 
-        Version:    1.0.0
-        Author:     Andi Bellstedt
-        Date:       2026-01-23
+        Version:    1.0.1.1
+        Author:     Andi Bellstedt, Copilot
+        Date:       2026-01-25
+        Keywords:   DNS, DebugLog, Parser, LogParser, Internal, FQDN
+
+    .LINK
+        https://github.com/AndiBellstedt/DNSServer.DebugLogParser
 
     #>
     [CmdletBinding()]
     [OutputType([string])]
     param(
-        [Parameter(Mandatory = $true)]
         [string]
         $EncodedName
     )

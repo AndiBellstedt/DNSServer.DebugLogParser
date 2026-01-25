@@ -87,7 +87,7 @@ Describe "ConvertFrom-DnsLogLine - Parameter Contract" {
             }
 
             $contextFilterParam | Should -Not -BeNullOrEmpty
-            $contextFilterParam.StaticType.Name | Should -Be 'String'
+            $contextFilterParam.StaticType.Name | Should -Be 'String[]'
 
             # Check for ValidateSet
             $validateSet = $contextFilterParam.Attributes |
@@ -101,7 +101,13 @@ Describe "ConvertFrom-DnsLogLine - Parameter Contract" {
             $validValues | Should -Contain 'Packet'
             $validValues | Should -Contain 'Event'
             $validValues | Should -Contain 'Note'
-            $validValues.Count | Should -Be 4
+            $validValues | Should -Contain 'DSPoll'
+            $validValues | Should -Contain 'Init'
+            $validValues | Should -Contain 'Lookup'
+            $validValues | Should -Contain 'Recurse'
+            $validValues | Should -Contain 'Remote'
+            $validValues | Should -Contain 'Tombstone'
+            $validValues.Count | Should -Be 10
         }
 
         It "Should have ContextFilter parameter with default value of 'All'" {
@@ -111,7 +117,8 @@ Describe "ConvertFrom-DnsLogLine - Parameter Contract" {
 
             $contextFilterParam | Should -Not -BeNullOrEmpty
             $contextFilterParam.DefaultValue | Should -Not -BeNullOrEmpty
-            $contextFilterParam.DefaultValue.Extent.Text | Should -Match "'All'"
+            # Default value for array parameter is @('All')
+            $contextFilterParam.DefaultValue.Extent.Text | Should -Match "@\('All'\)"
         }
     }
 
@@ -188,7 +195,7 @@ Describe "ConvertFrom-DnsLogLine - Functionality" {
             $result | Should -Not -BeNullOrEmpty
             $result.DateTime | Should -BeOfType [DateTime]
             $result.ThreadId | Should -Be '0FE0'
-            $result.Context | Should -Be 'PACKET'
+            $result.Context | Should -Be 'Packet'
             $result.PacketId | Should -Be '000002C53117D990'
             $result.Protocol | Should -Be 'UDP'
             $result.Direction | Should -Be 'Rcv'
@@ -378,8 +385,29 @@ Describe "ConvertFrom-DnsLogLine - Functionality" {
             $result | Should -BeNullOrEmpty
         }
 
-        It "Should handle line with insufficient fields" {
+        It "Should handle PACKET line with insufficient fields as info-only record" {
             $result = ConvertFrom-DnsLogLine -Line "1/20/2026 11:00:16 PM 0FE0 PACKET"
+
+            # PACKET lines with insufficient standard format fields are treated as info-only records
+            $result | Should -Not -BeNullOrEmpty
+            $result.Context | Should -Be 'Packet'
+            $result.RemoteIP | Should -BeNullOrEmpty
+            $result.Protocol | Should -BeNullOrEmpty
+            $result.Information | Should -BeNullOrEmpty
+        }
+
+        It "Should handle PACKET info-only record like 'Response packet does not match'" {
+            $result = ConvertFrom-DnsLogLine -Line "25.01.2026 03:36:22 0EDC PACKET  Response packet 000001923DB025B0 does not match any outstanding query" -Culture 'de-DE'
+
+            $result | Should -Not -BeNullOrEmpty
+            $result.Context | Should -Be 'Packet'
+            $result.RemoteIP | Should -BeNullOrEmpty
+            $result.Protocol | Should -BeNullOrEmpty
+            $result.Information | Should -Be 'Response packet 000001923DB025B0 does not match any outstanding query'
+        }
+
+        It "Should skip orphaned 'Response packet' lines without date prefix" {
+            $result = ConvertFrom-DnsLogLine -Line "Response packet 000001AFB9B9E9D0 does not match any outstanding query"
 
             $result | Should -BeNullOrEmpty
         }
@@ -620,7 +648,7 @@ Describe "ConvertFrom-DnsLogLine - Functionality" {
         It "Should correctly identify context as NOTE" {
             $result = ConvertFrom-DnsLogLine -Line $noteLineSocketFailure
 
-            $result.Context | Should -Be 'NOTE'
+            $result.Context | Should -Be 'Note'
         }
     }
 
@@ -635,28 +663,28 @@ Describe "ConvertFrom-DnsLogLine - Functionality" {
             $result = ConvertFrom-DnsLogLine -Line $packetLine -ContextFilter 'All'
 
             $result | Should -Not -BeNullOrEmpty
-            $result.Context | Should -Be 'PACKET'
+            $result.Context | Should -Be 'Packet'
         }
 
         It "Should return EVENT line when ContextFilter is 'All'" {
             $result = ConvertFrom-DnsLogLine -Line $eventLine -ContextFilter 'All'
 
             $result | Should -Not -BeNullOrEmpty
-            $result.Context | Should -Be 'EVENT'
+            $result.Context | Should -Be 'Event'
         }
 
         It "Should return NOTE line when ContextFilter is 'All'" {
             $result = ConvertFrom-DnsLogLine -Line $noteLine -ContextFilter 'All'
 
             $result | Should -Not -BeNullOrEmpty
-            $result.Context | Should -Be 'NOTE'
+            $result.Context | Should -Be 'Note'
         }
 
         It "Should return PACKET line when ContextFilter is 'Packet'" {
             $result = ConvertFrom-DnsLogLine -Line $packetLine -ContextFilter 'Packet'
 
             $result | Should -Not -BeNullOrEmpty
-            $result.Context | Should -Be 'PACKET'
+            $result.Context | Should -Be 'Packet'
         }
 
         It "Should return null for EVENT line when ContextFilter is 'Packet'" {
@@ -681,7 +709,7 @@ Describe "ConvertFrom-DnsLogLine - Functionality" {
             $result = ConvertFrom-DnsLogLine -Line $eventLine -ContextFilter 'Event'
 
             $result | Should -Not -BeNullOrEmpty
-            $result.Context | Should -Be 'EVENT'
+            $result.Context | Should -Be 'Event'
         }
 
         It "Should return null for NOTE line when ContextFilter is 'Event'" {
@@ -706,7 +734,7 @@ Describe "ConvertFrom-DnsLogLine - Functionality" {
             $result = ConvertFrom-DnsLogLine -Line $noteLine -ContextFilter 'Note'
 
             $result | Should -Not -BeNullOrEmpty
-            $result.Context | Should -Be 'NOTE'
+            $result.Context | Should -Be 'Note'
         }
 
         It "Should use 'All' as default when ContextFilter is not specified" {
@@ -721,11 +749,13 @@ Describe "ConvertFrom-DnsLogLine - Functionality" {
     }
 
     Context "Context Type Edge Cases" {
-        It "Should return null for unknown context type" {
+        It "Should handle unknown context type as generic information" {
             $unknownContextLine = "1/20/2026 11:00:16 PM 0FE0 UNKNOWN  Some unknown data here"
             $result = ConvertFrom-DnsLogLine -Line $unknownContextLine
 
-            $result | Should -BeNullOrEmpty
+            $result | Should -Not -BeNullOrEmpty
+            $result.Context | Should -Be 'UNKNOWN'
+            $result.Information | Should -Be 'Some unknown data here'
         }
 
         It "Should handle EVENT with no information text" {
@@ -733,7 +763,7 @@ Describe "ConvertFrom-DnsLogLine - Functionality" {
             $result = ConvertFrom-DnsLogLine -Line $emptyEventLine
 
             $result | Should -Not -BeNullOrEmpty
-            $result.Context | Should -Be 'EVENT'
+            $result.Context | Should -Be 'Event'
             ($result.Information | Measure-Object -Character).Characters | Should -BeLessOrEqual 1
         }
 
@@ -742,7 +772,7 @@ Describe "ConvertFrom-DnsLogLine - Functionality" {
             $result = ConvertFrom-DnsLogLine -Line $emptyNoteLine
 
             $result | Should -Not -BeNullOrEmpty
-            $result.Context | Should -Be 'NOTE'
+            $result.Context | Should -Be 'Note'
             ($result.Information | Measure-Object -Character).Characters | Should -BeLessOrEqual 1
         }
 
@@ -751,7 +781,7 @@ Describe "ConvertFrom-DnsLogLine - Functionality" {
             $result = ConvertFrom-DnsLogLine -Line $specialCharLine
 
             $result | Should -Not -BeNullOrEmpty
-            $result.Context | Should -Be 'EVENT'
+            $result.Context | Should -Be 'Event'
             $result.Information | Should -Be "Zone 'example.com' loaded: file=C:\Windows\System32\dns\example.com.dns"
         }
 
@@ -760,7 +790,7 @@ Describe "ConvertFrom-DnsLogLine - Functionality" {
             $result = ConvertFrom-DnsLogLine -Line $specialCharLine
 
             $result | Should -Not -BeNullOrEmpty
-            $result.Context | Should -Be 'NOTE'
+            $result.Context | Should -Be 'Note'
             $result.Information | Should -Be 'error=0x80070057, status=ERROR_INVALID_PARAMETER'
         }
     }

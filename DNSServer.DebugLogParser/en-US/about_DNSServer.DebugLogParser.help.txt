@@ -66,13 +66,13 @@ LONG DESCRIPTION
 
   How DNSServer.DebugLogParser Works
 
-    The module uses high-performance streaming I/O to process log files of any
-    size efficiently. It reads the DNS debug log line by line, parses each
-    field according to the DNS Server's log format, and writes structured CSV
-    output.
+    The module is optimized for large files and processes DNS debug logs into
+    structured CSV output. It supports multi-line records (e.g. PACKET detail
+    blocks and indented continuation lines) so that event/diagnostic messages
+    and packet details stay attached to the correct record.
 
     Key capabilities:
-    - Parses all 16 fields from DNS debug log entries
+    - Parses the native DNS debug log fields and produces a consistent CSV layout
     - Handles multiple DNS Server versions (2012 R2 through 2025)
     - Supports both PowerShell Desktop (5.1+) and Core (7.x)
     - Processes files of any size (tested with 100MB+ files)
@@ -92,7 +92,7 @@ LONG DESCRIPTION
     Contains all parsed log entries with the following columns:
     - DateTime: Date and time of the DNS query/response
     - ThreadId: Internal DNS server thread identifier
-    - Context: Operation context (PACKET, EVENT, NOTE)
+    - Context: Operation context (e.g. Packet, Event, Note, DSPoll, Init, Lookup, Recurse, Remote, Tombstone)
     - PacketId: DNS packet identifier
     - Protocol: UDP or TCP
     - Direction: Rcv (received/query) or Snd (sent/response)
@@ -105,22 +105,30 @@ LONG DESCRIPTION
     - ResponseCode: NOERROR, NXDOMAIN, SERVFAIL, etc.
     - QuestionType: DNS record type (A, AAAA, MX, PTR, etc.)
     - QuestionName: Domain name queried
-    - Information: Additional information (for EVENT and NOTE contexts)
+    - Information: Additional information (for Event/Note/etc.; for Packet detail blocks, contains the TCP/UDP detail header line)
+    - Details: JSON data for Packet entries that include detail blocks (empty otherwise)
     - ComputerName: Source server name (always present; empty if not specified)
 
     Note: The ComputerName column is always included at the end of each record to ensure
     consistent output structure. This facilitates multi-server log consolidation scenarios.
 
-    Statistics File (Optional)
-    Provides aggregated metrics including:
-    - ClientIP: Client IP address
-    - Protocol: UDP or TCP
-    - Direction: Rcv or Snd
-    - QuestionType: DNS record type
-    - Count: Number of queries matching this combination
-    - DateMin: Earliest query date/time for this combination
-    - DateMax: Latest query date/time for this combination
-    - ComputerName: Source server name (always present; empty if not specified)
+     Statistics Files (Optional)
+     When statistics are generated, two separate files are created:
+
+     1) Context statistics (_Statistic.csv)
+       - Date: Date (yyyy-MM-dd)
+       - Context: Context name (e.g. Packet, Event, Note)
+       - Count: Number of records
+       - ComputerName: Source server name
+
+     2) Packet statistics (_PacketStatistic.csv)
+       - Date: Date (yyyy-MM-dd)
+       - ClientIP: Client IP address
+       - Protocol: UDP or TCP
+       - Direction: Rcv or Snd
+       - QuestionType: DNS record type
+       - Count: Number of records
+       - ComputerName: Source server name
 
   Performance Optimization
 
@@ -151,9 +159,17 @@ LONG DESCRIPTION
 
     Output Type
     Choose to generate:
-    - CSV data file only (default)
-    - Statistics file only
-    - Both data and statistics files
+    - CSV data file only
+    - Statistics files only
+    - Both data and statistics files (default)
+
+    ContextFilter
+    Limit which context types are included in output. Useful to focus on Packet traffic
+    or on operational/diagnostic contexts.
+
+    NoDetailsParsing
+    Keeps the Details column empty (skips parsing Packet detail blocks into JSON) to improve
+    processing performance for very large files.
 
     InputCulture
     Specify the culture/locale of the DNS server where the log was generated.
@@ -290,24 +306,23 @@ EXAMPLES
         PS C:\> Convert-DNSDebugLogFile -InputFile "C:\Logs\dns.log" `
                     -OutputType Both
 
-    This creates two files:
-    - C:\Logs\dns.csv (detailed query data)
-    - C:\Logs\dns_statistic.csv (aggregated metrics)
+    This creates three files:
+    - C:\Logs\dns.csv (detailed query/event data)
+    - C:\Logs\dns_Statistic.csv (daily counts by Context)
+    - C:\Logs\dns_PacketStatistic.csv (daily Packet counts by client/protocol/direction/type)
 
   Example 4: Multi-Server Log Consolidation
 
     Process logs from multiple DNS servers and add a ComputerName column:
 
         PS C:\> Get-ChildItem "\\DNSServer01\C$\DNS\dns*.log" |
-                    Convert-DNSDebugLogFile -ComputerName "DNSServer01" `
-                        -OutputFile "C:\Analysis\Consolidated.csv"
+              Convert-DNSDebugLogFile -ComputerName "DNSServer01" -OutputType Both
 
         PS C:\> Get-ChildItem "\\DNSServer02\C$\DNS\dns*.log" |
-                    Convert-DNSDebugLogFile -ComputerName "DNSServer02" `
-                        -OutputFile "C:\Analysis\Consolidated.csv" -Append
+              Convert-DNSDebugLogFile -ComputerName "DNSServer02" -OutputType Both
 
-    This consolidates logs from multiple servers into a single CSV file with
-    a ComputerName column identifying the source server.
+      Each server's output includes a ComputerName column, which makes it easy to combine
+      files later in Power BI / Excel / a database.
 
   Example 5: Batch Processing with Pipeline
 
@@ -363,10 +378,11 @@ EXAMPLES
     Generate only statistical summary without detailed data:
 
         PS C:\> Convert-DNSDebugLogFile -InputFile "C:\Logs\dns.log" `
-                    -OutputType StatisticOnly
+              -OutputType Statistic
 
-    This creates only C:\Logs\dns_statistic.csv with aggregated metrics,
-    skipping the detailed data file.
+      This creates only the statistics files, skipping the detailed data file:
+      - C:\Logs\dns_Statistic.csv
+      - C:\Logs\dns_PacketStatistic.csv
 
   Example 10: Scheduled Task Example
 
@@ -408,13 +424,13 @@ EXAMPLES
 
         # Step 3: Query for suspicious activity
         PS C:\> Invoke-Sqlcmd -Query "
-                    SELECT ComputerName, RemoteIP, QueryName, COUNT(*) as QueryCount
-                    FROM DNSQueries
-                    WHERE QueryType = 'TXT'
-                    GROUP BY ComputerName, RemoteIP, QueryName
-                    HAVING COUNT(*) > 100
-                    ORDER BY QueryCount DESC" `
-                    -ServerInstance "SQLServer" -Database "DNSLogs"
+              SELECT ComputerName, ClientIP, QuestionName, COUNT(*) as QueryCount
+              FROM DNSQueries
+              WHERE QuestionType = 'TXT'
+              GROUP BY ComputerName, ClientIP, QuestionName
+              HAVING COUNT(*) > 100
+              ORDER BY QueryCount DESC" `
+              -ServerInstance "SQLServer" -Database "DNSLogs"
 
     This workflow demonstrates converting logs, loading into a database, and
     querying for potential DNS tunneling activity (excessive TXT queries).
@@ -448,9 +464,9 @@ TROUBLESHOOTING
     still typically achieves 70-90% size reduction.
 
     Issue: Statistics file doesn't match expectations
-    Solution: Verify you're using -OutputType Both or -OutputType StatisticOnly.
-    Statistics aggregate data, so counts represent total queries, not unique
-    entries.
+    Solution: Verify you're using -OutputType Both or -OutputType Statistic.
+    Statistics are aggregated counts (daily groupings), so values represent totals,
+    not unique entries.
 
   Reporting Issues
 

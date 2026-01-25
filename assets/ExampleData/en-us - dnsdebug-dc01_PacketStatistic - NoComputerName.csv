@@ -1,0 +1,5 @@
+﻿Date;ClientIP;Protocol;Direction;QuestionType;Count;ComputerName
+2026-01-20;10.0.0.1;UDP;Rcv;A;3;
+2026-01-20;10.0.0.1;UDP;Snd;A;3;
+2026-01-20;10.0.0.2;UDP;Rcv;A;3;
+2026-01-20;10.0.0.2;UDP;Snd;A;3;

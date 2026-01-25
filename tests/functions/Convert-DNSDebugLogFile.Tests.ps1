@@ -180,6 +180,15 @@ Describe "Convert-DNSDebugLogFile - Parameter Contract" {
             $skipParam.StaticType.Name | Should -Be 'SwitchParameter'
         }
 
+        It "Should have NoDetailsParsing as a switch parameter" {
+            $noDetailsParam = $paramBlock.Parameters | Where-Object {
+                $_.Name.VariablePath.UserPath -eq 'NoDetailsParsing'
+            }
+
+            $noDetailsParam | Should -Not -BeNullOrEmpty
+            $noDetailsParam.StaticType.Name | Should -Be 'SwitchParameter'
+        }
+
         It "Should have InputCulture and OutputCulture with CultureInfo type and ArgumentCompleter" {
             $inputCultureParam = $paramBlock.Parameters | Where-Object {
                 $_.Name.VariablePath.UserPath -eq 'InputCulture'
@@ -220,7 +229,7 @@ Describe "Convert-DNSDebugLogFile - Parameter Contract" {
             }
 
             $contextFilterParam | Should -Not -BeNullOrEmpty
-            $contextFilterParam.StaticType.Name | Should -Be 'String'
+            $contextFilterParam.StaticType.Name | Should -Be 'String[]'
 
             # Check for ValidateSet
             $validateSet = $contextFilterParam.Attributes |
@@ -234,7 +243,13 @@ Describe "Convert-DNSDebugLogFile - Parameter Contract" {
             $validValues | Should -Contain 'Packet'
             $validValues | Should -Contain 'Event'
             $validValues | Should -Contain 'Note'
-            $validValues.Count | Should -Be 4
+            $validValues | Should -Contain 'DSPoll'
+            $validValues | Should -Contain 'Init'
+            $validValues | Should -Contain 'Lookup'
+            $validValues | Should -Contain 'Recurse'
+            $validValues | Should -Contain 'Remote'
+            $validValues | Should -Contain 'Tombstone'
+            $validValues.Count | Should -Be 10
         }
 
         It "Should have ContextFilter parameter with default value of 'All'" {
@@ -244,7 +259,8 @@ Describe "Convert-DNSDebugLogFile - Parameter Contract" {
 
             $contextFilterParam | Should -Not -BeNullOrEmpty
             $contextFilterParam.DefaultValue | Should -Not -BeNullOrEmpty
-            $contextFilterParam.DefaultValue.Extent.Text | Should -Match "'All'"
+            # Default value for array parameter is @('All')
+            $contextFilterParam.DefaultValue.Extent.Text | Should -Match "@\('All'\)"
         }
     }
 

@@ -10,7 +10,7 @@
         Supports culture-aware date/time parsing to handle DNS debug logs from servers
         with different regional settings (e.g., German DD.MM.YYYY, US MM/DD/YYYY, Swedish YYYY-MM-DD).
 
-        Supports filtering by context type: PACKET, EVENT, or Note.
+        Supports filtering by context type: PACKET, EVENT, Note, DSPOLL, INIT, LOOKUP, RECURSE, REMOTE, and TOMBSTN.
 
     .PARAMETER Line
         The log line string to parse.
@@ -20,9 +20,10 @@
         DNS Server debug logs use the date format of the Windows locale on the source server.
 
     .PARAMETER ContextFilter
-        Filters the log lines by context type.
-        Valid values: 'All', 'Packet', 'Event', 'Note'
+        Filters the log lines by context type. Accepts single or multiple values.
+        Valid values: 'All', 'Packet', 'Event', 'Note', 'DSPoll', 'Init', 'Lookup', 'Recurse', 'Remote', 'Tombstone'
         Default is 'All' which processes all context types.
+        When multiple values are specified (not including 'All'), only log lines matching one of the specified contexts are returned.
 
     .EXAMPLE
         PS C:\> ConvertFrom-DnsLogLine -Line "20.01.2026 23:00:18 0FE0 PACKET  000002C5307CFCD0 UDP Rcv 10.0.0.2        ede1   Q [0001   D   NOERROR] A      (4)ocsp(8)digicert(3)com(0)"
@@ -87,9 +88,13 @@
     .NOTES
         Internal function not exported from module.
 
-        Version:    1.2.0.0
-        Author:     Andi Bellstedt
-        Date:       2026-01-23
+        Version:    1.4.0.0
+        Author:     Andi Bellstedt, Copilot
+        Date:       2026-01-25
+        Keywords:   DNS, DebugLog, Parser, LogParser, Internal
+
+    .LINK
+        https://github.com/AndiBellstedt/DNSServer.DebugLogParser
 
     #>
     [CmdletBinding()]
@@ -101,20 +106,25 @@
         [System.Globalization.CultureInfo]
         $Culture = [System.Globalization.CultureInfo]::CurrentCulture,
 
-        [ValidateSet('All', 'Packet', 'Event', 'Note')]
-        [string]
-        $ContextFilter = 'All'
+        [ValidateSet('All', 'Packet', 'Event', 'Note', 'DSPoll', 'Init', 'Lookup', 'Recurse', 'Remote', 'Tombstone')]
+        [string[]]
+        $ContextFilter = @('All')
     )
 
     # Skip empty lines
-    if ([string]::IsNullOrWhiteSpace($Line)) {
-        return $null
-    }
+    if ([string]::IsNullOrWhiteSpace($Line)) { return $null }
+
+    # Skip lines that starts with any whitespace character (space, tab, etc.)
+    if ([char]::IsWhiteSpace($Line[0])) { return $null }
+
+    # Skip lines that starts with "TCP" or "UDP" (non-standard format)
+    if ($Line.StartsWith('TCP') -or $Line.StartsWith('UDP')) { return $null }
+
+    # Skip orphaned "Response packet" lines (continuation lines without date prefix)
+    if ($Line.StartsWith('Response packet')) { return $null }
 
     # Minimum line length check (date + time + minimal data)
-    if ($Line.Length -lt 25) {
-        return $null
-    }
+    if ($Line.Length -lt 25) { return $null }
 
     # Parse fixed-position fields for maximum performance
     # The date/time portion occupies positions 0-18 or 0-19 depending on format
@@ -127,18 +137,14 @@
     # Find the first whitespace after position 8 to locate the date/time boundary
     # The time portion always ends before the thread ID (hex like 0FE0)
     $firstSpace = $Line.IndexOf(' ')
-    if ($firstSpace -lt 6 -or $firstSpace -gt 12) {
-        return $null
-    }
+    if ($firstSpace -lt 6 -or $firstSpace -gt 12) { return $null }
 
     # Extract date string
     $dateStr = $Line.Substring(0, $firstSpace)
 
     # Find second space to get time portion
     $secondSpace = $Line.IndexOf(' ', $firstSpace + 1)
-    if ($secondSpace -eq -1 -or $secondSpace - $firstSpace -lt 6) {
-        return $null
-    }
+    if ($secondSpace -eq -1 -or $secondSpace - $firstSpace -lt 6) { return $null }
 
     $timeStr = $Line.Substring($firstSpace + 1, $secondSpace - $firstSpace - 1)
 
@@ -175,15 +181,13 @@
     # Split on whitespace for remaining fields to detect context type
     $parts = $remaining.Split([char[]]@(' ', "`t"), [StringSplitOptions]::RemoveEmptyEntries)
 
-    if ($parts.Count -lt 2) {
-        return $null
-    }
+    # Assume invalid if less than 2 parts. At least Thread ID and Context are required.
+    if ($parts.Count -lt 2) { return $null }
 
     # Field 3: Thread ID (always first part)
     $threadId = $parts[0]
 
     # Detect context type from the second part
-    # Known contexts: PACKET, EVENT, Note:
     $contextRaw = $parts[1]
     $context = [string]::Empty
     $information = [string]::Empty
@@ -202,19 +206,58 @@
     $questionType = [string]::Empty
     $questionName = [string]::Empty
 
+    # Context type mapping for information-extraction contexts: Raw context keyword -> Context name and keyword length
+    # Note: PACKET is handled separately due to completely different parsing logic
+    $contextMap = @{
+        'EVENT'   = @{ Name = 'Event'; KeywordLength = 5 }
+        'DSPOLL'  = @{ Name = 'DSPoll'; KeywordLength = 6 }
+        'INIT'    = @{ Name = 'Init'; KeywordLength = 4 }
+        'LOOKUP'  = @{ Name = 'Lookup'; KeywordLength = 6 }
+        'RECURSE' = @{ Name = 'Recurse'; KeywordLength = 7 }
+        'REMOTE'  = @{ Name = 'Remote'; KeywordLength = 6 }
+        'TOMBSTN' = @{ Name = 'Tombstone'; KeywordLength = 7 }
+        'Note:'   = @{ Name = 'Note'; KeywordLength = 5 }
+    }
+
     # Determine context type and apply filter
     if ($contextRaw -eq 'PACKET') {
-        $context = 'PACKET'
+        $context = 'Packet'
 
-        # Apply context filter
-        if ($ContextFilter -ne 'All' -and $ContextFilter -ne 'Packet') {
-            return $null
+        # Apply context filter - check if 'All' is in array or if current context is in filter array
+        if ($ContextFilter -notcontains 'All' -and $ContextFilter -notcontains $context) { return $null }
+
+        # Check for information-only PACKET records (e.g., "Response packet XXX does not match any outstanding query")
+        # Standard PACKET format requires at least 7 parts: ThreadId, PACKET, PacketId, Protocol, Direction, RemoteIP, Xid
+        # Information-only packets have format: ThreadId, PACKET, followed by message text
+        # Detect by checking if parts[3] is NOT a valid protocol indicator (UDP/TCP)
+        if ($parts.Count -lt 7 -or ($parts[3] -ne 'UDP' -and $parts[3] -ne 'TCP')) {
+            # Information-only PACKET record - extract everything after "PACKET" as information
+            $packetIndex = $remaining.IndexOf('PACKET')
+            if ($packetIndex -gt -1) {
+                $information = $remaining.Substring($packetIndex + 6).TrimStart()
+            }
+            # Return with empty packet-specific fields but with information populated
+            return [PSCustomObject]@{
+                DateTime      = $dateTime
+                ThreadId      = $threadId
+                Context       = $context
+                PacketId      = $packetId
+                Protocol      = $protocol
+                Direction     = $direction
+                RemoteIP      = $remoteIp
+                Xid           = $xid
+                QueryResponse = $queryResponse
+                Opcode        = $opcode
+                FlagsHex      = $flagsHex
+                FlagsChar     = $flagsChar
+                ResponseCode  = $responseCode
+                QuestionType  = $questionType
+                QuestionName  = $questionName
+                Information   = $information
+            }
         }
 
-        # Process PACKET context with existing logic
-        if ($parts.Count -lt 7) {
-            return $null
-        }
+        # Process standard PACKET context
 
         # Field 5: Internal packet identifier
         $packetId = $parts[2]
@@ -283,39 +326,37 @@
         }
 
         # Convert question name to FQDN
-        $questionName = ConvertTo-Fqdn -EncodedName $questionName
-
-    } elseif ($contextRaw -eq 'EVENT') {
-        $context = 'EVENT'
-
-        # Apply context filter
-        if ($ContextFilter -ne 'All' -and $ContextFilter -ne 'Event') {
-            return $null
+        if ($questionName) {
+            $questionName = ConvertTo-Fqdn -EncodedName $questionName
         }
 
-        # Extract information text (everything after "EVENT" with leading whitespace trimmed)
-        $eventIndex = $remaining.IndexOf('EVENT')
-        if ($eventIndex -gt -1) {
-            $information = $remaining.Substring($eventIndex + 5).TrimStart()
-        }
+    } elseif ($contextMap.ContainsKey($contextRaw)) {
+        # Handle all information-extraction context types uniformly
+        $contextInfo = $contextMap[$contextRaw]
+        $context = $contextInfo.Name
 
-    } elseif ($contextRaw -eq 'Note:') {
-        $context = 'NOTE'
+        # Apply context filter - check if 'All' is in array or if current context is in filter array
+        if ($ContextFilter -notcontains 'All' -and $ContextFilter -notcontains $context) { return $null }
 
-        # Apply context filter
-        if ($ContextFilter -ne 'All' -and $ContextFilter -ne 'Note') {
-            return $null
-        }
-
-        # Extract information text (everything after "Note:" with leading whitespace trimmed)
-        $noteIndex = $remaining.IndexOf('Note:')
-        if ($noteIndex -gt -1) {
-            $information = $remaining.Substring($noteIndex + 5).TrimStart()
+        # Extract information text (everything after the context keyword with leading whitespace trimmed)
+        $keywordIndex = $remaining.IndexOf($contextRaw)
+        if ($keywordIndex -gt -1) {
+            $information = $remaining.Substring($keywordIndex + $contextInfo.KeywordLength).TrimStart()
         }
 
     } else {
-        # Unknown context type - skip this line
-        return $null
+        # Unknown context type - treat as "raw" generic information
+
+        # Apply context filter - only include unknown types if 'All' is specified
+        if ($ContextFilter -notcontains 'All') { return $null }
+
+        $context = $contextRaw
+
+        # Remove Thread ID and Context from parts to get remaining information
+        $parts = $parts[2..($parts.Count - 1)]
+
+        # Put all in the information block
+        $information = ($parts -join ' ').Trim()
     }
 
     # Return parsed object using ordered hashtable for performance
