@@ -249,9 +249,9 @@
         Ideal for scheduled log processing pipelines.
 
     .NOTES
-        Version  : 1.3.0.1
+        Version  : 1.3.1.0
         Author   : Andi Bellstedt, Copilot
-        Date     : 2026-01-23
+        Date     : 2026-01-25
         Keywords : Microsoft Windows Server, DNSServer, DNS, DebugLog, LogParser
 
     .LINK
@@ -305,7 +305,7 @@
         $CompressOutput,
 
         [Parameter()]
-        [ValidateSet('All', 'Packet', 'Event', 'Note')]
+        [ValidateSet('All', 'Packet', 'Event', 'Note', 'DSPoll', 'Init', 'Lookup', 'Recurse', 'Remote', 'Tombstone')]
         [string]
         $ContextFilter = 'All',
 
