@@ -87,10 +87,13 @@
     .NOTES
         Internal function not exported from module.
 
-        Version:    1.2.1.0
-        Author:     Andi Bellstedt, Copilot (Andi Bellstedt)
+        Version:    1.2.1.1
+        Author:     Andi Bellstedt, Copilot
         Date:       2026-01-25
         Keywords:   DNS, DebugLog, Parser, LogParser, Internal
+
+    .LINK
+        https://github.com/AndiBellstedt/DNSServer.DebugLogParser
 
     #>
     [CmdletBinding()]
