@@ -1,0 +1,34 @@
+﻿DateTime;ThreadId;Context;PacketId;Protocol;Direction;ClientIP;Xid;Type;Opcode;FlagsHex;FlagsChar;ResponseCode;QuestionType;QuestionName;Information;Details;ComputerName
+2026-01-20 22:59:00;0E18;Init;;;;;;;;;;;;"";"Server settings have been successfully loaded";"";dc01
+2026-01-20 22:59:00;0E18;Init;;;;;;;;;;;;"";"Server UTC logging has been initialized";"";dc01
+2026-01-20 23:00:16;0FE0;Packet;000002C53117D990;UDP;Rcv;10.0.0.2;c049;Query;Standard;0001;RecursionDesired;NOERROR;A;"odc.officeapps.live.com";"";"";dc01
+2026-01-20 23:00:17;DF0;Note;;;;;;;;;;;;"";"got GQCS failure on a dead socket context status=995, socket=904, pcon=0000022FB0E463A0, state=-1, IP=0.0.0.0";"";dc01
+2026-01-20 23:00:17;5C8;Note;;;;;;;;;;;;"";"got GQCS failure on a dead socket context status=995, socket=612, pcon=00000020F4B18490, state=-1, IP=::";"";dc01
+2026-01-20 23:00:17;0518;Event;;;;;;;;;;;;"";"The DNS server has started.";"";dc01
+2026-01-20 23:00:17;05AC;Event;;;;;;;;;;;;"";"The DNS server has finished the background loading and signing of zones. All zones are now available for DNS updates and zone transfers, as allowed by their individual zone configuration.";"";dc01
+2026-01-20 23:00:17;0EDC;Packet;;;;;;Query;;;;;;"";"Response packet 000001923DB025B0 does not match any outstanding query";"";dc01
+2026-01-20 23:00:18;0FE0;Packet;000002C5312634D0;UDP;Snd;10.0.0.1;420b;Query;Standard;0001;RecursionDesired;NOERROR;A;"odc.officeapps.live.com";"";"";dc01
+2026-01-20 23:00:18;0FE0;Packet;000002C530473140;UDP;Rcv;10.0.0.1;420b;Response;Standard;8081;DR;NOERROR;A;"odc.officeapps.live.com";"";"";dc01
+2026-01-20 23:00:18;0FE0;Packet;000002C53117D990;UDP;Snd;10.0.0.2;c049;Response;Standard;8081;DR;NOERROR;A;"odc.officeapps.live.com";"";"";dc01
+2026-01-20 23:00:18;0FE0;Packet;000002C5307CFCD0;UDP;Rcv;10.0.0.2;ede1;Query;Standard;0001;RecursionDesired;NOERROR;A;"ocsp.digicert.com";"";"";dc01
+2026-01-20 23:00:18;0FE0;Packet;000002C530473140;UDP;Snd;10.0.0.1;0014;Query;Standard;0001;RecursionDesired;NOERROR;A;"ocsp.digicert.com";"";"";dc01
+2026-01-20 23:00:18;0FE0;Packet;000002C52F67C0F0;UDP;Rcv;10.0.0.1;0014;Response;Standard;8081;DR;NOERROR;A;"ocsp.digicert.com";"";"";dc01
+2026-01-20 23:00:18;0FE0;Packet;000002C5307CFCD0;UDP;Snd;10.0.0.2;ede1;Response;Standard;8081;DR;NOERROR;A;"ocsp.digicert.com";"";"";dc01
+2026-01-20 23:00:22;0FE0;Packet;000002C52FBF1130;UDP;Rcv;10.0.0.2;1cde;Query;Standard;0001;RecursionDesired;NOERROR;A;"4.au.download.windowsupdate.com";"";"";dc01
+2026-01-20 23:00:22;0FE0;Packet;000002C5302C8C90;UDP;Snd;10.0.0.1;d9e4;Query;Standard;0001;RecursionDesired;NOERROR;A;"4.au.download.windowsupdate.com";"";"";dc01
+2026-01-20 23:00:22;0FE0;Packet;000002C52EBD9920;UDP;Rcv;10.0.0.1;d9e4;Response;Standard;8081;DR;NOERROR;A;"4.au.download.windowsupdate.com";"";"";dc01
+2026-01-20 23:00:22;0FE0;Packet;000002C52FBF1130;UDP;Snd;10.0.0.2;1cde;Response;Standard;8081;DR;NOERROR;A;"4.au.download.windowsupdate.com";"";"";dc01
+2026-01-21 00:02:38;1080;Packet;000001AFBA4CC030;TCP;Rcv;10.10.0.11;0001;Query;Standard;0001;RecursionDesired;NOERROR;ALL;"berlin.de";"";"";dc01
+2026-01-21 00:28:38;1080;Packet;000001AFBA4CC030;TCP;Rcv;10.10.0.11;0001;Query;Standard;0001;RecursionDesired;NOERROR;ALL;"berlin.de";"TCP question info at 000001AFBA4CC030";"";dc01
+2026-01-21 00:29:28;1080;Packet;000001AFBA4CC030;TCP;Rcv;10.10.0.11;0001;Query;Standard;0001;RecursionDesired;NOERROR;A;"berlin.de";"TCP question info at 000001AFBA4CC030";"";dc01
+2026-01-21 00:32:09;17CC;Lookup;;;;;;;;;;;;"";"Writing A records for node www.powershellgallery.com. (000001923AD21580) to answer section of packet 000001923C0A88D0";"";dc01
+2026-01-21 00:32:09;17CC;Packet;;;;;;Query;;;;;;"";"21.01.2026 00:32:09 0EDC LOOKUP  Query name (6)mobile(6)events(4)data(9)microsoft(3)com(0)";"";dc01
+2026-01-21 00:32:09;17CC;Recurse;;;;;;;;;;;;"";"Recursing question from node www.powershellgallery.com. (query 000001923C0A88D0)";"";dc01
+2026-01-21 00:48:53;17CC;Recurse;;;;;;;;;;;;"";"Cache locking prevented a record from being cached. Domain name: edge.microsoft.com. Record already in cache: type 5 Total cache time (seconds): 30 Cache time already passed (seconds): 0";"";dc01
+2026-01-21 01:48:57;0758;DSPoll;;;;;;;;;;;;"";"Polling thread awake at 174012 seconds";"";dc01
+2026-01-21 01:48:57;0758;DSPoll;;;;;;;;;;;;"";"Polling zonescope Default of zone .";"";dc01
+2026-01-21 01:48:57;0758;DSPoll;;;;;;;;;;;;"";"Opening update search in zone . current USN  = 395725 zone USN     = 395724 poll filter  = (&(objectCategory=dnsNode)(uSNChanged>=395725))";"";dc01
+2026-01-21 01:06:29;0EDC;Remote;;;;;;;;;;;;"";"Building NS list for node . (query 000001923CB37DD0)";"";dc01
+2026-01-21 02:00:15;06D0;Tombstone;;;;;;;;;;;;"";"Checking the legacy partition for expired tombstones";"";dc01
+2026-01-21 02:00:15;06D0;Tombstone;;;;;;;;;;;;"";"Deleted 0 expired tombstones from the legacy partition";"";dc01
+2026-01-21 02:00:15;06D0;Tombstone;;;;;;;;;;;;"";"Checking directory partition DomainDnsZones.company.com for expired tombstones";"";dc01
