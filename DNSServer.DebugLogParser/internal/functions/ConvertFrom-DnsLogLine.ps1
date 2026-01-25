@@ -87,7 +87,7 @@
     .NOTES
         Internal function not exported from module.
 
-        Version:    1.2.0.0
+        Version:    1.2.1.0
         Author:     Andi Bellstedt, Copilot (Andi Bellstedt)
         Date:       2026-01-25
         Keywords:   DNS, DebugLog, Parser, LogParser, Internal
@@ -109,6 +109,12 @@
 
     # Skip empty lines
     if ([string]::IsNullOrWhiteSpace($Line)) { return $null }
+
+    # Skip lines that starts with whitespaces
+    if ($Line.IndexOf(' ') -eq 0) { return $null }
+
+    # Skip lines that starts with "TCP" or "UDP" (non-standard format)
+    if ($Line.StartsWith('TCP') -or $Line.StartsWith('UDP')) { return $null }
 
     # Minimum line length check (date + time + minimal data)
     if ($Line.Length -lt 25) { return $null }
@@ -175,7 +181,6 @@
     $threadId = $parts[0]
 
     # Detect context type from the second part
-    # Known contexts: PACKET, EVENT, Note:
     $contextRaw = $parts[1]
     $context = [string]::Empty
     $information = [string]::Empty
@@ -193,6 +198,19 @@
     $responseCode = [string]::Empty
     $questionType = [string]::Empty
     $questionName = [string]::Empty
+
+    # Context type mapping for information-extraction contexts: Raw context keyword -> Context name and keyword length
+    # Note: PACKET is handled separately due to completely different parsing logic
+    $contextMap = @{
+        'EVENT'   = @{ Name = 'Event'; KeywordLength = 5 }
+        'DSPOLL'  = @{ Name = 'DSPoll'; KeywordLength = 6 }
+        'INIT'    = @{ Name = 'Init'; KeywordLength = 4 }
+        'LOOKUP'  = @{ Name = 'Lookup'; KeywordLength = 6 }
+        'RECURSE' = @{ Name = 'Recurse'; KeywordLength = 7 }
+        'REMOTE'  = @{ Name = 'Remote'; KeywordLength = 6 }
+        'TOMBSTN' = @{ Name = 'Tombstone'; KeywordLength = 7 }
+        'Note:'   = @{ Name = 'Note'; KeywordLength = 5 }
+    }
 
     # Determine context type and apply filter
     if ($contextRaw -eq 'PACKET') {
@@ -275,100 +293,18 @@
             $questionName = ConvertTo-Fqdn -EncodedName $questionName
         }
 
-    } elseif ($contextRaw -eq 'EVENT') {
-        $context = 'Event'
+    } elseif ($contextMap.ContainsKey($contextRaw)) {
+        # Handle all information-extraction context types uniformly
+        $contextInfo = $contextMap[$contextRaw]
+        $context = $contextInfo.Name
 
         # Apply context filter
-        if ($ContextFilter -ne 'All' -and $ContextFilter -ne 'Event') { return $null }
+        if ($ContextFilter -ne 'All' -and $ContextFilter -ne $context) { return $null }
 
-        # Extract information text (everything after "EVENT" with leading whitespace trimmed)
-        $eventIndex = $remaining.IndexOf('EVENT')
-        if ($eventIndex -gt -1) {
-            $information = $remaining.Substring($eventIndex + 5).TrimStart()
-        }
-
-    } elseif ($contextRaw -eq 'DSPOLL') {
-        $context = 'DSPoll'
-
-        # Apply context filter
-        if ($ContextFilter -ne 'All' -and $ContextFilter -ne 'DSPoll') { return $null }
-
-        # Extract information text (everything after "DSPOLL" with leading whitespace trimmed)
-        $dspollIndex = $remaining.IndexOf('DSPOLL')
-        if ($dspollIndex -gt -1) {
-            $information = $remaining.Substring($dspollIndex + 6).TrimStart()
-        }
-
-    } elseif ($contextRaw -eq 'INIT') {
-        $context = 'Init'
-
-        # Apply context filter
-        if ($ContextFilter -ne 'All' -and $ContextFilter -ne 'Init') { return $null }
-
-        # Extract information text (everything after "INIT" with leading whitespace trimmed)
-        $initIndex = $remaining.IndexOf('INIT')
-        if ($initIndex -gt -1) {
-            $information = $remaining.Substring($initIndex + 4).TrimStart()
-        }
-
-    } elseif ($contextRaw -eq 'LOOKUP') {
-        $context = 'Lookup'
-
-        # Apply context filter
-        if ($ContextFilter -ne 'All' -and $ContextFilter -ne 'Lookup') { return $null }
-
-        # Extract information text (everything after "LOOKUP" with leading whitespace trimmed)
-        $lookupIndex = $remaining.IndexOf('LOOKUP')
-        if ($lookupIndex -gt -1) {
-            $information = $remaining.Substring($lookupIndex + 6).TrimStart()
-        }
-
-    } elseif ($contextRaw -eq 'RECURSE') {
-        $context = 'Recurse'
-
-        # Apply context filter
-        if ($ContextFilter -ne 'All' -and $ContextFilter -ne 'Recurse') { return $null }
-
-        # Extract information text (everything after "RECURSE" with leading whitespace trimmed)
-        $recurseIndex = $remaining.IndexOf('RECURSE')
-        if ($recurseIndex -gt -1) {
-            $information = $remaining.Substring($recurseIndex + 7).TrimStart()
-        }
-
-    } elseif ($contextRaw -eq 'REMOTE') {
-        $context = 'Remote'
-
-        # Apply context filter
-        if ($ContextFilter -ne 'All' -and $ContextFilter -ne 'Remote') { return $null }
-
-        # Extract information text (everything after "REMOTE" with leading whitespace trimmed)
-        $remoteIndex = $remaining.IndexOf('REMOTE')
-        if ($remoteIndex -gt -1) {
-            $information = $remaining.Substring($remoteIndex + 6).TrimStart()
-        }
-
-    } elseif ($contextRaw -eq 'TOMBSTN') {
-        $context = 'Tombstone'
-
-        # Apply context filter
-        if ($ContextFilter -ne 'All' -and $ContextFilter -ne 'Tombstone') { return $null }
-
-        # Extract information text (everything after "TOMBSTN" with leading whitespace trimmed)
-        $tombstnIndex = $remaining.IndexOf('TOMBSTN')
-        if ($tombstnIndex -gt -1) {
-            $information = $remaining.Substring($tombstnIndex + 7).TrimStart()
-        }
-
-    } elseif ($contextRaw -eq 'Note:') {
-        $context = 'Note'
-
-        # Apply context filter
-        if ($ContextFilter -ne 'All' -and $ContextFilter -ne 'Note') { return $null }
-
-        # Extract information text (everything after "Note:" with leading whitespace trimmed)
-        $noteIndex = $remaining.IndexOf('Note:')
-        if ($noteIndex -gt -1) {
-            $information = $remaining.Substring($noteIndex + 5).TrimStart()
+        # Extract information text (everything after the context keyword with leading whitespace trimmed)
+        $keywordIndex = $remaining.IndexOf($contextRaw)
+        if ($keywordIndex -gt -1) {
+            $information = $remaining.Substring($keywordIndex + $contextInfo.KeywordLength).TrimStart()
         }
 
     } else {
