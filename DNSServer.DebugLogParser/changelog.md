@@ -1,4 +1,18 @@
 ﻿# Changelog
+## Unreleased (2026-01-25)
+
+### Added
+* **NEW**: `ContextFilter` recognizes additional context types: `DSPoll`, `Init`, `Lookup`, `Recurse`, `Remote`, `Tombstone`.
+  * Effect: `Convert-DNSDebugLogFile` can now include/exclude these diagnostic and lifecycle entries via `-ContextFilter`.
+
+### Changed
+* Question names that are missing or encoded as empty are now handled gracefully (no parse errors); CSV output will contain an empty QuestionName field when absent.
+
+### Improved
+* `Convert-DNSDebugLogFile` parsing is more resilient: stricter line validation and improved extraction reduce spurious/invalid rows from malformed logs while preserving the CSV/statistic output format.
+
+### Notes
+* These changes are designed to be backward compatible for normal usage. If you rely on an exact set of context names or previously-strict parsing behavior, please validate downstream scripts.
 
 ## 1.1.0 (2026-01-23)
 
