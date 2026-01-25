@@ -180,6 +180,15 @@ Describe "Convert-DNSDebugLogFile - Parameter Contract" {
             $skipParam.StaticType.Name | Should -Be 'SwitchParameter'
         }
 
+        It "Should have NoDetailsParsing as a switch parameter" {
+            $noDetailsParam = $paramBlock.Parameters | Where-Object {
+                $_.Name.VariablePath.UserPath -eq 'NoDetailsParsing'
+            }
+
+            $noDetailsParam | Should -Not -BeNullOrEmpty
+            $noDetailsParam.StaticType.Name | Should -Be 'SwitchParameter'
+        }
+
         It "Should have InputCulture and OutputCulture with CultureInfo type and ArgumentCompleter" {
             $inputCultureParam = $paramBlock.Parameters | Where-Object {
                 $_.Name.VariablePath.UserPath -eq 'InputCulture'
