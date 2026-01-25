@@ -114,8 +114,8 @@
     # Skip empty lines
     if ([string]::IsNullOrWhiteSpace($Line)) { return $null }
 
-    # Skip lines that starts with whitespaces
-    if ($Line.IndexOf(' ') -eq 0) { return $null }
+    # Skip lines that starts with any whitespace character (space, tab, etc.)
+    if ($Line.Length -gt 0 -and [char]::IsWhiteSpace($Line[0])) { return $null }
 
     # Skip lines that starts with "TCP" or "UDP" (non-standard format)
     if ($Line.StartsWith('TCP') -or $Line.StartsWith('UDP')) { return $null }
