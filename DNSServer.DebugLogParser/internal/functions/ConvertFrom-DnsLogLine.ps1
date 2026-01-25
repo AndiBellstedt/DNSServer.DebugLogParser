@@ -10,7 +10,7 @@
         Supports culture-aware date/time parsing to handle DNS debug logs from servers
         with different regional settings (e.g., German DD.MM.YYYY, US MM/DD/YYYY, Swedish YYYY-MM-DD).
 
-        Supports filtering by context type: PACKET, EVENT, or Note.
+        Supports filtering by context type: PACKET, EVENT, Note, DSPOLL, INIT, LOOKUP, RECURSE, REMOTE, and TOMBSTN.
 
     .PARAMETER Line
         The log line string to parse.
@@ -21,7 +21,7 @@
 
     .PARAMETER ContextFilter
         Filters the log lines by context type.
-        Valid values: 'All', 'Packet', 'Event', 'Note'
+        Valid values: 'All', 'Packet', 'Event', 'Note', 'DSPoll', 'Init', 'Lookup', 'Recurse', 'Remote', 'Tombstone'
         Default is 'All' which processes all context types.
 
     .EXAMPLE
@@ -88,8 +88,9 @@
         Internal function not exported from module.
 
         Version:    1.2.0.0
-        Author:     Andi Bellstedt
-        Date:       2026-01-23
+        Author:     Andi Bellstedt, Copilot (Andi Bellstedt)
+        Date:       2026-01-25
+        Keywords:   DNS, DebugLog, Parser, LogParser, Internal
 
     #>
     [CmdletBinding()]
@@ -101,20 +102,16 @@
         [System.Globalization.CultureInfo]
         $Culture = [System.Globalization.CultureInfo]::CurrentCulture,
 
-        [ValidateSet('All', 'Packet', 'Event', 'Note')]
+        [ValidateSet('All', 'Packet', 'Event', 'Note', 'DSPoll', 'Init', 'Lookup', 'Recurse', 'Remote', 'Tombstone')]
         [string]
         $ContextFilter = 'All'
     )
 
     # Skip empty lines
-    if ([string]::IsNullOrWhiteSpace($Line)) {
-        return $null
-    }
+    if ([string]::IsNullOrWhiteSpace($Line)) { return $null }
 
     # Minimum line length check (date + time + minimal data)
-    if ($Line.Length -lt 25) {
-        return $null
-    }
+    if ($Line.Length -lt 25) { return $null }
 
     # Parse fixed-position fields for maximum performance
     # The date/time portion occupies positions 0-18 or 0-19 depending on format
@@ -127,18 +124,14 @@
     # Find the first whitespace after position 8 to locate the date/time boundary
     # The time portion always ends before the thread ID (hex like 0FE0)
     $firstSpace = $Line.IndexOf(' ')
-    if ($firstSpace -lt 6 -or $firstSpace -gt 12) {
-        return $null
-    }
+    if ($firstSpace -lt 6 -or $firstSpace -gt 12) { return $null }
 
     # Extract date string
     $dateStr = $Line.Substring(0, $firstSpace)
 
     # Find second space to get time portion
     $secondSpace = $Line.IndexOf(' ', $firstSpace + 1)
-    if ($secondSpace -eq -1 -or $secondSpace - $firstSpace -lt 6) {
-        return $null
-    }
+    if ($secondSpace -eq -1 -or $secondSpace - $firstSpace -lt 6) { return $null }
 
     $timeStr = $Line.Substring($firstSpace + 1, $secondSpace - $firstSpace - 1)
 
@@ -175,9 +168,8 @@
     # Split on whitespace for remaining fields to detect context type
     $parts = $remaining.Split([char[]]@(' ', "`t"), [StringSplitOptions]::RemoveEmptyEntries)
 
-    if ($parts.Count -lt 2) {
-        return $null
-    }
+    # Assume invalid if less than 2 parts. At least Thread ID and Context are required.
+    if ($parts.Count -lt 2) { return $null }
 
     # Field 3: Thread ID (always first part)
     $threadId = $parts[0]
@@ -204,17 +196,13 @@
 
     # Determine context type and apply filter
     if ($contextRaw -eq 'PACKET') {
-        $context = 'PACKET'
+        $context = 'Packet'
 
         # Apply context filter
-        if ($ContextFilter -ne 'All' -and $ContextFilter -ne 'Packet') {
-            return $null
-        }
+        if ($ContextFilter -ne 'All' -and $ContextFilter -ne 'Packet') { return $null }
 
         # Process PACKET context with existing logic
-        if ($parts.Count -lt 7) {
-            return $null
-        }
+        if ($parts.Count -lt 7) { return $null }
 
         # Field 5: Internal packet identifier
         $packetId = $parts[2]
@@ -283,15 +271,15 @@
         }
 
         # Convert question name to FQDN
-        $questionName = ConvertTo-Fqdn -EncodedName $questionName
+        if ($questionName) {
+            $questionName = ConvertTo-Fqdn -EncodedName $questionName
+        }
 
     } elseif ($contextRaw -eq 'EVENT') {
-        $context = 'EVENT'
+        $context = 'Event'
 
         # Apply context filter
-        if ($ContextFilter -ne 'All' -and $ContextFilter -ne 'Event') {
-            return $null
-        }
+        if ($ContextFilter -ne 'All' -and $ContextFilter -ne 'Event') { return $null }
 
         # Extract information text (everything after "EVENT" with leading whitespace trimmed)
         $eventIndex = $remaining.IndexOf('EVENT')
@@ -299,13 +287,83 @@
             $information = $remaining.Substring($eventIndex + 5).TrimStart()
         }
 
-    } elseif ($contextRaw -eq 'Note:') {
-        $context = 'NOTE'
+    } elseif ($contextRaw -eq 'DSPOLL') {
+        $context = 'DSPoll'
 
         # Apply context filter
-        if ($ContextFilter -ne 'All' -and $ContextFilter -ne 'Note') {
-            return $null
+        if ($ContextFilter -ne 'All' -and $ContextFilter -ne 'DSPoll') { return $null }
+
+        # Extract information text (everything after "DSPOLL" with leading whitespace trimmed)
+        $dspollIndex = $remaining.IndexOf('DSPOLL')
+        if ($dspollIndex -gt -1) {
+            $information = $remaining.Substring($dspollIndex + 6).TrimStart()
         }
+
+    } elseif ($contextRaw -eq 'INIT') {
+        $context = 'Init'
+
+        # Apply context filter
+        if ($ContextFilter -ne 'All' -and $ContextFilter -ne 'Init') { return $null }
+
+        # Extract information text (everything after "INIT" with leading whitespace trimmed)
+        $initIndex = $remaining.IndexOf('INIT')
+        if ($initIndex -gt -1) {
+            $information = $remaining.Substring($initIndex + 4).TrimStart()
+        }
+
+    } elseif ($contextRaw -eq 'LOOKUP') {
+        $context = 'Lookup'
+
+        # Apply context filter
+        if ($ContextFilter -ne 'All' -and $ContextFilter -ne 'Lookup') { return $null }
+
+        # Extract information text (everything after "LOOKUP" with leading whitespace trimmed)
+        $lookupIndex = $remaining.IndexOf('LOOKUP')
+        if ($lookupIndex -gt -1) {
+            $information = $remaining.Substring($lookupIndex + 6).TrimStart()
+        }
+
+    } elseif ($contextRaw -eq 'RECURSE') {
+        $context = 'Recurse'
+
+        # Apply context filter
+        if ($ContextFilter -ne 'All' -and $ContextFilter -ne 'Recurse') { return $null }
+
+        # Extract information text (everything after "RECURSE" with leading whitespace trimmed)
+        $recurseIndex = $remaining.IndexOf('RECURSE')
+        if ($recurseIndex -gt -1) {
+            $information = $remaining.Substring($recurseIndex + 7).TrimStart()
+        }
+
+    } elseif ($contextRaw -eq 'REMOTE') {
+        $context = 'Remote'
+
+        # Apply context filter
+        if ($ContextFilter -ne 'All' -and $ContextFilter -ne 'Remote') { return $null }
+
+        # Extract information text (everything after "REMOTE" with leading whitespace trimmed)
+        $remoteIndex = $remaining.IndexOf('REMOTE')
+        if ($remoteIndex -gt -1) {
+            $information = $remaining.Substring($remoteIndex + 6).TrimStart()
+        }
+
+    } elseif ($contextRaw -eq 'TOMBSTN') {
+        $context = 'Tombstone'
+
+        # Apply context filter
+        if ($ContextFilter -ne 'All' -and $ContextFilter -ne 'Tombstone') { return $null }
+
+        # Extract information text (everything after "TOMBSTN" with leading whitespace trimmed)
+        $tombstnIndex = $remaining.IndexOf('TOMBSTN')
+        if ($tombstnIndex -gt -1) {
+            $information = $remaining.Substring($tombstnIndex + 7).TrimStart()
+        }
+
+    } elseif ($contextRaw -eq 'Note:') {
+        $context = 'Note'
+
+        # Apply context filter
+        if ($ContextFilter -ne 'All' -and $ContextFilter -ne 'Note') { return $null }
 
         # Extract information text (everything after "Note:" with leading whitespace trimmed)
         $noteIndex = $remaining.IndexOf('Note:')
@@ -314,8 +372,18 @@
         }
 
     } else {
-        # Unknown context type - skip this line
-        return $null
+        # Unknown context type - treat as "raw" generic information
+
+        # Apply context filter
+        if ($ContextFilter -ne 'All') { return $null }
+
+        $context = $contextRaw
+
+        # Remove Thread ID and Context from parts to get remaining information
+        $parts = $parts[2..($parts.Count - 1)]
+
+        # Put all in the information block
+        $information = ($parts -join ' ').Trim()
     }
 
     # Return parsed object using ordered hashtable for performance
