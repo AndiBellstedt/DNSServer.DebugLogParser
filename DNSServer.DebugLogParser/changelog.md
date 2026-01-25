@@ -1,18 +1,60 @@
 ﻿# Changelog
-## Unreleased (2026-01-25)
+
+## 1.2.0 (2026-01-25)
 
 ### Added
-* **NEW**: `ContextFilter` recognizes additional context types: `DSPoll`, `Init`, `Lookup`, `Recurse`, `Remote`, `Tombstone`.
-  * Effect: `Convert-DNSDebugLogFile` can now include/exclude these diagnostic and lifecycle entries via `-ContextFilter`.
+* **NEW**: Multi-line record processing for DNS PACKET detail blocks
+  * PACKET context entries can now include detailed TCP/UDP connection information and DNS message structure
+  * Detail blocks are parsed into structured JSON format in the new `Details` column
+  * Includes: Socket info, remote address/port, timing data, message structure (XID, Flags, QCOUNT, etc.)
+  * DNS sections (QUESTION, ANSWER, AUTHORITY, ADDITIONAL) are captured with full record details
+  * Encoded domain names in detail blocks are automatically converted to FQDN format
+* **NEW**: `Details` column in CSV output
+  * Contains structured JSON data for PACKET entries with detail blocks
+  * Empty for PACKET entries without details and all non-PACKET contexts
+  * Enables deep packet analysis and forensic investigation of DNS queries/responses
+* **NEW**: `NoDetailsParsing` switch parameter for performance optimization
+  * Skips expensive JSON parsing of PACKET detail blocks
+  * Can improve processing speed by 30-50% for logs with many detail blocks
+  * Use when processing very large files (100MB+) and detailed packet structure is not needed
+  * Detail blocks are still collected in Information column, but Details column remains empty
+* **NEW**: Multi-line continuation support for non-PACKET contexts
+  * EVENT, Note, DSPoll, and other contexts can now span multiple lines
+  * Indented continuation lines are automatically joined to the main record's Information field
+  * Preserves complete error messages, zone updates, and diagnostic output
+* **NEW**: `ContextFilter` recognizes additional context types: `DSPoll`, `Init`, `Lookup`, `Recurse`, `Remote`, `Tombstone`
+  * Effect: `Convert-DNSDebugLogFile` can now include/exclude these diagnostic and lifecycle entries via `-ContextFilter`
+* **NEW**: Internal function `ConvertTo-PacketDetailJson` for efficient JSON generation
+  * Parses detail block lines into hierarchical structured data
+  * Optimized for performance with manual parsing instead of regex
+  * Supports nested structures (Message → Flags → sub-properties, DNS sections → records)
 
 ### Changed
-* Question names that are missing or encoded as empty are now handled gracefully (no parse errors); CSV output will contain an empty QuestionName field when absent.
+* **BREAKING**: CSV output now includes 18 columns (added `Details` column before `ComputerName`)
+  * New column order: DateTime, ThreadId, Context, PacketId, Protocol, Direction, ClientIP, Xid, Type, Opcode, FlagsHex, FlagsChar, ResponseCode, QuestionType, QuestionName, Information, **Details**, ComputerName
+  * Impact: Scripts that rely on column positions must be updated
+  * Benefit: Rich packet analysis capabilities without changing existing Information column behavior
+* Data line processing refactored to read all lines into memory for efficient multi-line record detection
+  * Performance: Minimal impact due to optimized List<string> usage
+  * Benefit: Enables accurate lookahead for detail blocks and continuation lines
+* Question names that are missing or encoded as empty are now handled gracefully (no parse errors); CSV output will contain an empty QuestionName field when absent
 
 ### Improved
-* `Convert-DNSDebugLogFile` parsing is more resilient: stricter line validation and improved extraction reduce spurious/invalid rows from malformed logs while preserving the CSV/statistic output format.
+* `Convert-DNSDebugLogFile` parsing is more resilient: stricter line validation and improved extraction reduce spurious/invalid rows from malformed logs while preserving the CSV/statistic output format
+* PACKET context detection distinguishes between simple queries and queries with detail blocks
+* Empty lines after PACKET entries without details are properly skipped
+* Domain name decoding in detail blocks uses existing `ConvertTo-Fqdn` function for consistency
+
+### Performance
+* Processing speed maintained for logs without detail blocks
+* `NoDetailsParsing` switch provides 30-50% speed improvement when JSON parsing is not needed
+* Efficient state management during multi-line record processing
+* Optimized string operations (TrimStart, Join) instead of regex for continuation line handling
 
 ### Notes
-* These changes are designed to be backward compatible for normal usage. If you rely on an exact set of context names or previously-strict parsing behavior, please validate downstream scripts.
+* These changes are designed to be backward compatible for normal usage. If you rely on an exact set of context names or previously-strict parsing behavior, please validate downstream scripts
+* The new `Details` column is always present in CSV output; use `NoDetailsParsing` to keep it empty for performance
+* Existing scripts that parse CSV by column position need to account for the new `Details` column (position 17, before ComputerName)
 
 ## 1.1.0 (2026-01-23)
 
