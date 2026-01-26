@@ -462,6 +462,9 @@
     process {
         #region File Processing
         foreach ($currentFile in $InputFile) {
+            # Reset progress counter for each file to ensure consistent progress update intervals
+            $progressCounter = 0
+
             # Validate input file exists and is a file (not a directory)
             if (-not (Test-Path -Path $currentFile)) {
                 $errorRecord = [System.Management.Automation.ErrorRecord]::new(
@@ -587,8 +590,8 @@
                 # - Maintains a small queue of upcoming lines for multi-line record detection
                 # - Avoids loading entire file into memory (OOM prevention for 100MB+ files)
                 # - Buffer size of 100 lines provides sufficient lookahead for detail blocks
-                $lookaheadBuffer = [System.Collections.Generic.Queue[string]]::new(100)
                 $bufferSize = 100
+                $lookaheadBuffer = [System.Collections.Generic.Queue[string]]::new($bufferSize)
 
                 # Pre-fill the lookahead buffer
                 while (-not $reader.EndOfStream -and $lookaheadBuffer.Count -lt $bufferSize) {
@@ -636,7 +639,7 @@
                                 $information = $nextLine.TrimEnd()
 
                                 # Consume the TCP/UDP line from buffer
-                                $lookaheadBuffer.Dequeue() | Out-Null
+                                $null = $lookaheadBuffer.Dequeue()
                                 if (-not $reader.EndOfStream) {
                                     $lookaheadBuffer.Enqueue($reader.ReadLine())
                                     $lineCount++
@@ -652,7 +655,7 @@
                                     # Empty line terminates the detail block
                                     if ([string]::IsNullOrWhiteSpace($detailLine)) {
                                         # Consume empty line
-                                        $lookaheadBuffer.Dequeue() | Out-Null
+                                        $null = $lookaheadBuffer.Dequeue()
                                         if (-not $reader.EndOfStream) {
                                             $lookaheadBuffer.Enqueue($reader.ReadLine())
                                             $lineCount++
@@ -666,7 +669,7 @@
                                         $detailLineList.Add($detailLine.TrimStart())
 
                                         # Consume the detail line from buffer
-                                        $lookaheadBuffer.Dequeue() | Out-Null
+                                        $null = $lookaheadBuffer.Dequeue()
                                         if (-not $reader.EndOfStream) {
                                             $lookaheadBuffer.Enqueue($reader.ReadLine())
                                             $lineCount++
@@ -683,7 +686,7 @@
                                 }
                             } elseif ([string]::IsNullOrWhiteSpace($nextLine)) {
                                 # Empty line after PACKET without details - skip it
-                                $lookaheadBuffer.Dequeue() | Out-Null
+                                $null = $lookaheadBuffer.Dequeue()
                                 if (-not $reader.EndOfStream) {
                                     $lookaheadBuffer.Enqueue($reader.ReadLine())
                                     $lineCount++
@@ -703,7 +706,7 @@
                             # Empty line terminates continuation
                             if ([string]::IsNullOrWhiteSpace($contLine)) {
                                 # Consume empty line
-                                $lookaheadBuffer.Dequeue() | Out-Null
+                                $null = $lookaheadBuffer.Dequeue()
                                 if (-not $reader.EndOfStream) {
                                     $lookaheadBuffer.Enqueue($reader.ReadLine())
                                     $lineCount++
@@ -717,7 +720,7 @@
                                 $continuationTextList.Add($contLine.Trim())
 
                                 # Consume the continuation line from buffer
-                                $lookaheadBuffer.Dequeue() | Out-Null
+                                $null = $lookaheadBuffer.Dequeue()
                                 if (-not $reader.EndOfStream) {
                                     $lookaheadBuffer.Enqueue($reader.ReadLine())
                                     $lineCount++
