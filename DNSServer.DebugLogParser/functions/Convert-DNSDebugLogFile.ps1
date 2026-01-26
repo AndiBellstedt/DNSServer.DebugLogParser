@@ -637,7 +637,7 @@
                                 $information = $nextLine.TrimEnd()
 
                                 # Consume the TCP/UDP line from buffer
-                                $lookaheadBuffer.Dequeue() | Out-Null
+                                $null = $lookaheadBuffer.Dequeue()
                                 if (-not $reader.EndOfStream) {
                                     $lookaheadBuffer.Enqueue($reader.ReadLine())
                                     $lineCount++
@@ -654,7 +654,7 @@
                                     # Empty line terminates the detail block
                                     if ([string]::IsNullOrWhiteSpace($detailLine)) {
                                         # Consume empty line
-                                        $lookaheadBuffer.Dequeue() | Out-Null
+                                        $null = $lookaheadBuffer.Dequeue()
                                         if (-not $reader.EndOfStream) {
                                             $lookaheadBuffer.Enqueue($reader.ReadLine())
                                             $lineCount++
@@ -668,7 +668,7 @@
                                         $detailLineList.Add($detailLine.TrimStart())
 
                                         # Consume the detail line from buffer
-                                        $lookaheadBuffer.Dequeue() | Out-Null
+                                        $null = $lookaheadBuffer.Dequeue()
                                         if (-not $reader.EndOfStream) {
                                             $lookaheadBuffer.Enqueue($reader.ReadLine())
                                             $lineCount++
@@ -685,7 +685,7 @@
                                 }
                             } elseif ([string]::IsNullOrWhiteSpace($nextLine)) {
                                 # Empty line after PACKET without details - skip it
-                                $lookaheadBuffer.Dequeue() | Out-Null
+                                $null = $lookaheadBuffer.Dequeue()
                                 if (-not $reader.EndOfStream) {
                                     $lookaheadBuffer.Enqueue($reader.ReadLine())
                                     $lineCount++
@@ -706,7 +706,7 @@
                             # Empty line terminates continuation
                             if ([string]::IsNullOrWhiteSpace($contLine)) {
                                 # Consume empty line
-                                $lookaheadBuffer.Dequeue() | Out-Null
+                                $null = $lookaheadBuffer.Dequeue()
                                 if (-not $reader.EndOfStream) {
                                     $lookaheadBuffer.Enqueue($reader.ReadLine())
                                     $lineCount++
@@ -720,7 +720,7 @@
                                 $continuationTextList.Add($contLine.Trim())
 
                                 # Consume the continuation line from buffer
-                                $lookaheadBuffer.Dequeue() | Out-Null
+                                $null = $lookaheadBuffer.Dequeue()
                                 if (-not $reader.EndOfStream) {
                                     $lookaheadBuffer.Enqueue($reader.ReadLine())
                                     $lineCount++
