@@ -462,6 +462,9 @@
     process {
         #region File Processing
         foreach ($currentFile in $InputFile) {
+            # Reset progress counter for each file to ensure consistent progress update intervals
+            $progressCounter = 0
+
             # Validate input file exists and is a file (not a directory)
             if (-not (Test-Path -Path $currentFile)) {
                 $errorRecord = [System.Management.Automation.ErrorRecord]::new(
