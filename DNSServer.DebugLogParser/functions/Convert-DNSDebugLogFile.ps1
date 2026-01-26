@@ -586,9 +586,9 @@
                 # Streaming lookahead buffer implementation:
                 # - Maintains a small queue of upcoming lines for multi-line record detection
                 # - Avoids loading entire file into memory (OOM prevention for 100MB+ files)
-                # - Buffer size of 50 lines provides sufficient lookahead for detail blocks
-                $lookaheadBuffer = [System.Collections.Generic.Queue[string]]::new(100)
+                # - Buffer size of 100 lines provides sufficient lookahead for detail blocks
                 $bufferSize = 100
+                $lookaheadBuffer = [System.Collections.Generic.Queue[string]]::new($bufferSize)
 
                 # Pre-fill the lookahead buffer
                 while (-not $reader.EndOfStream -and $lookaheadBuffer.Count -lt $bufferSize) {
