@@ -14,6 +14,7 @@
         column (empty unless specified).
 
         KEY FEATURES:
+        - Streaming processing avoids loading the full file into memory (suitable for very large logs)
         - High-performance parsing optimized for large files (100MB+)
         - Customizable CSV delimiter (default: semicolon)
         - Optional statistical summaries with aggregated metrics
@@ -30,8 +31,9 @@
         for multi-server consolidation scenarios.
 
         PERFORMANCE:
-        Optimized using StreamReader/StreamWriter with 64KB buffers, string operations instead of
-        regex, manual CSV generation, and efficient hashtable-based statistics collection.
+        Optimized using StreamReader/StreamWriter with 64KB buffers, streaming processing for
+        memory-efficient handling of large files, string operations instead of regex, manual CSV
+        generation, and efficient hashtable-based statistics collection.
 
         COMPATIBILITY:
         - PowerShell 5.1+ (Desktop and Core editions)
@@ -67,7 +69,8 @@
         Use this when consolidating logs from multiple DNS servers to identify the source server in
         combined datasets.
 
-        Note: This is NOT a remoting parameter. The cmdlet processes local files only.
+        Note: This is NOT a remoting parameter. It only labels the output. If you point -InputFile to
+        a UNC path, the file is read from that path (no WinRM/remote execution is performed).
 
     .PARAMETER OutputType
         Specifies the type of output to generate.
@@ -293,9 +296,9 @@
         Use when processing very large files and detailed packet structure is not needed.
 
     .NOTES
-        Version  : 1.7.0.0
+        Version  : 1.7.1.1
         Author   : Andi Bellstedt, Copilot
-        Date     : 2026-01-25
+        Date     : 2026-01-26
         Keywords : Microsoft Windows Server, DNSServer, DNS, DebugLog, LogParser
 
     .LINK
@@ -447,6 +450,8 @@
         # Start a stopwatch to measure total script runtime and a file counter
         $dnsParserStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
         [int]$fileCount = 0
+        [int]$progressCounter = 0
+        [int]$progressUpdateInterval = 1000
 
         # Validate parameter combination safety
         if ($RemoveSourceFile -and $SkipHeaderValidation) {
@@ -457,6 +462,9 @@
     process {
         #region File Processing
         foreach ($currentFile in $InputFile) {
+            # Reset progress counter for each file to ensure consistent progress update intervals
+            $progressCounter = 0
+
             # Validate input file exists and is a file (not a directory)
             if (-not (Test-Path -Path $currentFile)) {
                 $errorRecord = [System.Management.Automation.ErrorRecord]::new(
@@ -578,20 +586,34 @@
                 # - Other contexts can have continuation lines (indented lines following the main line)
                 # Records are delimited by: empty lines OR lines starting with a date (new record)
 
-                # Read all remaining lines into memory for efficient lookahead processing
-                # This is necessary because StreamReader doesn't support peeking multiple lines efficiently
-                $allLines = [System.Collections.Generic.List[string]]::new()
-                while (-not $reader.EndOfStream) {
-                    $allLines.Add($reader.ReadLine())
+                # Streaming lookahead buffer implementation:
+                # - Maintains a small queue of upcoming lines for multi-line record detection
+                # - Avoids loading entire file into memory (OOM prevention for 100MB+ files)
+                # - Buffer size of 100 lines provides sufficient lookahead for detail blocks
+                $bufferSize = 100
+                $lookaheadBuffer = [System.Collections.Generic.Queue[string]]::new($bufferSize)
+
+                # Pre-fill the lookahead buffer
+                while (-not $reader.EndOfStream -and $lookaheadBuffer.Count -lt $bufferSize) {
+                    $lookaheadBuffer.Enqueue($reader.ReadLine())
                     $lineCount++
                 }
 
-                $lineIndex = 0
-                $totalLines = $allLines.Count
+                # Process lines using streaming approach with lookahead capability
+                while ($lookaheadBuffer.Count -gt 0) {
+                    # Dequeue next line for processing
+                    $line = $lookaheadBuffer.Dequeue()
 
-                while ($lineIndex -lt $totalLines) {
-                    $line = $allLines[$lineIndex]
-                    $lineIndex++
+                    # Refill buffer to maintain lookahead capability
+                    if (-not $reader.EndOfStream) {
+                        $lookaheadBuffer.Enqueue($reader.ReadLine())
+                        $lineCount++
+                    }
+
+                    # Skip empty lines (record separators)
+                    if ([string]::IsNullOrWhiteSpace($line)) {
+                        continue
+                    }
 
                     # Parse the main record line
                     $parsed = ConvertFrom-DnsLogLine -Line $line -Culture $InputCulture -ContextFilter $ContextFilter
@@ -607,24 +629,37 @@
                         # Detail blocks start with "TCP " or "UDP " on the next line (no date prefix)
                         # followed by indented lines, terminated by empty line
 
-                        if ($lineIndex -lt $totalLines) {
-                            $nextLine = $allLines[$lineIndex]
+                        if ($lookaheadBuffer.Count -gt 0) {
+                            # Peek at next line without allocating array
+                            $nextLine = $lookaheadBuffer.Peek()
 
                             # Check if next line starts with "TCP " or "UDP " (detail block indicator)
                             if ($nextLine.StartsWith('TCP ') -or $nextLine.StartsWith('UDP ')) {
                                 # This is a detail block - extract the TCP/UDP info line
                                 $information = $nextLine.TrimEnd()
-                                $lineIndex++
+
+                                # Consume the TCP/UDP line from buffer
+                                $null = $lookaheadBuffer.Dequeue()
+                                if (-not $reader.EndOfStream) {
+                                    $lookaheadBuffer.Enqueue($reader.ReadLine())
+                                    $lineCount++
+                                }
 
                                 # Collect all indented detail lines until empty line or new record
                                 $detailLineList = [System.Collections.Generic.List[string]]::new()
 
-                                while ($lineIndex -lt $totalLines) {
-                                    $detailLine = $allLines[$lineIndex]
+                                while ($lookaheadBuffer.Count -gt 0) {
+                                    # Peek at next line without allocating array
+                                    $detailLine = $lookaheadBuffer.Peek()
 
                                     # Empty line terminates the detail block
                                     if ([string]::IsNullOrWhiteSpace($detailLine)) {
-                                        $lineIndex++
+                                        # Consume empty line
+                                        $null = $lookaheadBuffer.Dequeue()
+                                        if (-not $reader.EndOfStream) {
+                                            $lookaheadBuffer.Enqueue($reader.ReadLine())
+                                            $lineCount++
+                                        }
                                         break
                                     }
 
@@ -632,7 +667,13 @@
                                     if ($detailLine.Length -gt 0 -and $detailLine[0] -eq ' ') {
                                         # Continuation line - trim leading whitespace (2 spaces indent) but preserve structure
                                         $detailLineList.Add($detailLine.TrimStart())
-                                        $lineIndex++
+
+                                        # Consume the detail line from buffer
+                                        $null = $lookaheadBuffer.Dequeue()
+                                        if (-not $reader.EndOfStream) {
+                                            $lookaheadBuffer.Enqueue($reader.ReadLine())
+                                            $lineCount++
+                                        }
                                     } else {
                                         # New record detected - don't consume this line
                                         break
@@ -645,7 +686,11 @@
                                 }
                             } elseif ([string]::IsNullOrWhiteSpace($nextLine)) {
                                 # Empty line after PACKET without details - skip it
-                                $lineIndex++
+                                $null = $lookaheadBuffer.Dequeue()
+                                if (-not $reader.EndOfStream) {
+                                    $lookaheadBuffer.Enqueue($reader.ReadLine())
+                                    $lineCount++
+                                }
                             }
                             # Otherwise, nextLine is a new record - don't consume it
                         }
@@ -654,12 +699,18 @@
                         # Continuation lines start with whitespace and are appended to the main line's information
                         $continuationTextList = [System.Collections.Generic.List[string]]::new()
 
-                        while ($lineIndex -lt $totalLines) {
-                            $contLine = $allLines[$lineIndex]
+                        while ($lookaheadBuffer.Count -gt 0) {
+                            # Peek at next line without allocating array
+                            $contLine = $lookaheadBuffer.Peek()
 
                             # Empty line terminates continuation
                             if ([string]::IsNullOrWhiteSpace($contLine)) {
-                                $lineIndex++
+                                # Consume empty line
+                                $null = $lookaheadBuffer.Dequeue()
+                                if (-not $reader.EndOfStream) {
+                                    $lookaheadBuffer.Enqueue($reader.ReadLine())
+                                    $lineCount++
+                                }
                                 break
                             }
 
@@ -667,7 +718,13 @@
                             if ($contLine.Length -gt 0 -and $contLine[0] -eq ' ') {
                                 # Continuation line - trim whitespace and add to list
                                 $continuationTextList.Add($contLine.Trim())
-                                $lineIndex++
+
+                                # Consume the continuation line from buffer
+                                $null = $lookaheadBuffer.Dequeue()
+                                if (-not $reader.EndOfStream) {
+                                    $lookaheadBuffer.Enqueue($reader.ReadLine())
+                                    $lineCount++
+                                }
                             } else {
                                 # New record detected - don't consume this line
                                 break
@@ -744,6 +801,13 @@
                     #endregion -- -- Build CSV line
 
                     $parsedCount++
+                    $progressCounter++
+
+                    # Update progress every 1000 records for performance efficiency
+                    if ($progressCounter -ge $progressUpdateInterval) {
+                        Write-Progress -Activity "Processing DNS log file: $([System.IO.Path]::GetFileName($resolvedPath))" -Status "Parsed $parsedCount records ($lineCount lines read)" -PercentComplete -1
+                        $progressCounter = 0
+                    }
 
                     #region -- -- Collect statistics
                     if ($null -ne $contextStatistics) {
@@ -772,6 +836,9 @@
                     #endregion -- -- Collect statistics
                 }
                 #endregion Process data lines
+
+                # Complete progress bar
+                Write-Progress -Activity "Processing DNS log file: $([System.IO.Path]::GetFileName($resolvedPath))" -Completed
 
                 Write-Verbose "Completed parsing: $lineCount total lines, $parsedCount valid entries"
                 if ($writeCsvData) {
