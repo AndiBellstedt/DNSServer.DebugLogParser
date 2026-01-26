@@ -1,5 +1,23 @@
 ﻿# Changelog
 
+## 1.7.1.0 (2026-01-26)
+
+### Changed
+* **Performance**: Replaced memory-intensive line loading with streaming lookahead buffer
+  * Uses small queue (100 lines) to detect multi-line records without loading entire file into memory
+  * Prevents OOM (out-of-memory) errors on very large files (500MB+)
+  * Maintains full support for PACKET detail blocks and continuation lines
+  * Memory usage is now constant regardless of file size
+* **Progress**: Added `Write-Progress` for processing feedback
+  * Progress bar updates every 1000 records for minimal performance impact
+  * Displays current record count and file being processed
+
+### Added
+* **Internal**: New `Invoke-ParallelDnsLogProcessing` function
+  * Foundation for optional parallel processing in future releases
+  * Uses native PowerShell runspace pools (PS 5.1+ compatible, no dependencies)
+  * Not yet exposed as user-facing feature
+
 ## 1.2.0.0 (2026-01-25)
 
 ### Added
