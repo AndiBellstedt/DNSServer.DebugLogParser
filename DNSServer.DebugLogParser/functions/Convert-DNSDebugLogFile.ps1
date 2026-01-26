@@ -296,7 +296,7 @@
         Use when processing very large files and detailed packet structure is not needed.
 
     .NOTES
-        Version  : 1.7.1.0
+        Version  : 1.7.1.1
         Author   : Andi Bellstedt, Copilot
         Date     : 2026-01-26
         Keywords : Microsoft Windows Server, DNSServer, DNS, DebugLog, LogParser
@@ -630,9 +630,8 @@
                         # followed by indented lines, terminated by empty line
 
                         if ($lookaheadBuffer.Count -gt 0) {
-                            # Peek at next line (convert Queue to array for indexed access)
-                            $bufferArray = $lookaheadBuffer.ToArray()
-                            $nextLine = $bufferArray[0]
+                            # Peek at next line without allocating array
+                            $nextLine = $lookaheadBuffer.Peek()
 
                             # Check if next line starts with "TCP " or "UDP " (detail block indicator)
                             if ($nextLine.StartsWith('TCP ') -or $nextLine.StartsWith('UDP ')) {
@@ -650,9 +649,8 @@
                                 $detailLineList = [System.Collections.Generic.List[string]]::new()
 
                                 while ($lookaheadBuffer.Count -gt 0) {
-                                    # Peek at next line
-                                    $bufferArray = $lookaheadBuffer.ToArray()
-                                    $detailLine = $bufferArray[0]
+                                    # Peek at next line without allocating array
+                                    $detailLine = $lookaheadBuffer.Peek()
 
                                     # Empty line terminates the detail block
                                     if ([string]::IsNullOrWhiteSpace($detailLine)) {
@@ -702,9 +700,8 @@
                         $continuationTextList = [System.Collections.Generic.List[string]]::new()
 
                         while ($lookaheadBuffer.Count -gt 0) {
-                            # Peek at next line
-                            $bufferArray = $lookaheadBuffer.ToArray()
-                            $contLine = $bufferArray[0]
+                            # Peek at next line without allocating array
+                            $contLine = $lookaheadBuffer.Peek()
 
                             # Empty line terminates continuation
                             if ([string]::IsNullOrWhiteSpace($contLine)) {
