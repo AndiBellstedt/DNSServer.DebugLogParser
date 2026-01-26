@@ -53,7 +53,10 @@ Convert a DNS debug log file to CSV format using default settings:
 # Convert a single DNS debug log file
 Convert-DNSDebugLogFile -InputFile "C:\Windows\System32\dns\dns.log"
 
-# Output: C:\Windows\System32\dns\dns.csv (data file with semicolon delimiter)
+# Output (default: -OutputType Both):
+# - C:\Windows\System32\dns\dns.csv
+# - C:\Windows\System32\dns\dns_Statistic.csv
+# - C:\Windows\System32\dns\dns_PacketStatistic.csv
 ```
 
 #### Generate Statistics
@@ -234,7 +237,7 @@ The parsed CSV contains 18 columns for each DNS log entry:
 | ClientIP     | IP address of the client making the request                                 | 192.168.1.100               |
 | Xid          | DNS transaction ID (hexadecimal)                                            | F8A3                        |
 | Type         | Query or Response for Packet context (Response/Query; empty for non-Packet) | Response                    |
-| Opcode       | Q=Standard Query, N=Notify, U=Update, ?=Unknown                             | Q                           |
+| Opcode       | Standard, Notify, Update, or Unknown                                        | Standard                    |
 | FlagsHex     | DNS flags in hexadecimal                                                    | 0001                        |
 | FlagsChar    | DNS flags as characters (A=Authoritative, T=Truncated, D/R=Recursion)       | DR                          |
 | ResponseCode | DNS response code (NOERROR, NXDOMAIN, SERVFAIL, etc.)                       | NOERROR                     |
@@ -320,7 +323,7 @@ Convert-DNSDebugLogFile -InputFile "C:\Logs\dns.log" -Delimiter ","
 
 $queries = Import-Csv "C:\Logs\dns.csv" -Delimiter ","
 $failures = $queries | Where-Object {
-    $_.ResponseCode -ne 'NOERROR' -and $_.Type -eq 'R'
+    $_.ResponseCode -ne 'NOERROR' -and $_.Type -eq 'Response'
 }
 $failures | Group-Object ResponseCode, QuestionName |
     Select-Object Count, @{N='Error';E={$_.Values[0]}}, @{N='Domain';E={$_.Values[1]}} |

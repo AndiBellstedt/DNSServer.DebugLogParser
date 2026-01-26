@@ -14,7 +14,7 @@
         column (empty unless specified).
 
         KEY FEATURES:
-        - Streaming architecture with small lookahead buffer prevents OOM on very large files (500MB+)
+        - Streaming processing avoids loading the full file into memory (suitable for very large logs)
         - High-performance parsing optimized for large files (100MB+)
         - Customizable CSV delimiter (default: semicolon)
         - Optional statistical summaries with aggregated metrics
@@ -31,11 +31,9 @@
         for multi-server consolidation scenarios.
 
         PERFORMANCE:
-        Optimized using StreamReader/StreamWriter with 64KB buffers, streaming lookahead buffer for
-        memory-efficient processing, string operations instead of regex, manual CSV generation, and
-        efficient hashtable-based statistics collection. The streaming architecture uses a small
-        lookahead queue (50 lines) to detect multi-line records without loading the entire file into
-        memory, preventing OOM errors on very large files while maintaining full functionality.
+        Optimized using StreamReader/StreamWriter with 64KB buffers, streaming processing for
+        memory-efficient handling of large files, string operations instead of regex, manual CSV
+        generation, and efficient hashtable-based statistics collection.
 
         COMPATIBILITY:
         - PowerShell 5.1+ (Desktop and Core editions)
@@ -71,7 +69,8 @@
         Use this when consolidating logs from multiple DNS servers to identify the source server in
         combined datasets.
 
-        Note: This is NOT a remoting parameter. The cmdlet processes local files only.
+        Note: This is NOT a remoting parameter. It only labels the output. If you point -InputFile to
+        a UNC path, the file is read from that path (no WinRM/remote execution is performed).
 
     .PARAMETER OutputType
         Specifies the type of output to generate.
