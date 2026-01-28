@@ -24,6 +24,23 @@ DNSServer.DebugLogParser transforms Windows DNS Server debug logs into structure
 - Optional removal of source files after successful processing
 - Validates log file headers to ensure data integrity
 
+## Documentation
+
+The full documentation set is located in the [docs/](docs/index.md) folder:
+
+- Start here: [docs/index.md](docs/index.md)
+- Concepts: [Overview](docs/01-overview.md) and [Output Formats](docs/02-output-formats.md)
+- Reference: [Parameters and Options](docs/03-parameters-and-options.md)
+- Operations: [Performance](docs/04-performance.md), [Operational Best Practices](docs/06-operational-best-practices.md), and [Troubleshooting](docs/08-troubleshooting.md)
+- Practical walkthroughs: [Examples](docs/07-examples.md) and [Domain Environment Example](docs/09-domain-environment-example.md)
+
+You can also use PowerShell help directly:
+
+```powershell
+Get-Help about_DNSServer.DebugLogParser -Full
+Get-Help Convert-DNSDebugLogFile -Full
+```
+
 ## How to Use DNSServer.DebugLogParser
 
 ### Installation from PowerShell Gallery
