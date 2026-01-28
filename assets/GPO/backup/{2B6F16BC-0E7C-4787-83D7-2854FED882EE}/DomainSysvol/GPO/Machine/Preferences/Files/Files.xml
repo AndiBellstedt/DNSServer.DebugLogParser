@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Files clsid="{215B2E53-57CE-475c-80FE-9EEC14635851}">
+    <File clsid="{50BE44C8-567A-4ed1-B1D0-9234FE1F38AF}" name="Set-DNSServerDebugLogging.ps1" status="Set-DNSServerDebugLogging.ps1" image="1" changed="2026-01-24 14:21:09" uid="{0F09F964-D0F6-45A0-9704-05898A8523C4}" removePolicy="1" bypassErrors="1">
+        <Properties action="R" fromPath="%GptPath%\Preferences\Files\Set-DNSServerDebugLogging.ps1" targetPath="C:\Administration\Scripts\Set-DNSServerDebugLogging.ps1" readOnly="0" archive="1" hidden="0" suppress="0"/>
+        <Filters>
+            <FilterFile bool="AND" not="0" path="C:\Windows\System32\dns.exe" type="EXISTS" folder="0"/>
+        </Filters>
+    </File>
+</Files>

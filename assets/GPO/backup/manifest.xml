@@ -1,0 +1,13 @@
+<Backups xmlns="http://www.microsoft.com/GroupPolicy/GPOOperations/Manifest"
+    xmlns:mfst="http://www.microsoft.com/GroupPolicy/GPOOperations/Manifest" mfst:version="1.0">
+    <BackupInst>
+        <GPOGuid><![CDATA[{A82F4F7B-472F-4EF0-9E36-4BD3232D8A17}]]></GPOGuid>
+        <GPODomain><![CDATA[corp.company.com]]></GPODomain>
+        <GPODomainGuid><![CDATA[{e63c2af5-0cc9-4f20-a7d2-1b72b0fe7229}]]></GPODomainGuid>
+        <GPODomainController><![CDATA[dc01.corp.company.com]]></GPODomainController>
+        <BackupTime><![CDATA[2026-01-26T06:39:30]]></BackupTime>
+        <ID><![CDATA[{2B6F16BC-0E7C-4787-83D7-2854FED882EE}]]></ID>
+        <Comment><![CDATA[]]></Comment>
+        <GPODisplayName><![CDATA[C-Analytics-DNSDebugLoggin-DomainControllers]]></GPODisplayName>
+    </BackupInst>
+</Backups>
