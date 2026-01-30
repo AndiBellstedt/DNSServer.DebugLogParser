@@ -189,6 +189,55 @@
 
         Performance impact: Can improve processing speed by 30-50% for logs with many PACKET detail blocks.
 
+    .PARAMETER SynchronousProcessing
+        Forces synchronous (single-threaded) processing instead of the default asynchronous
+        producer-consumer pipeline.
+
+        By default, the cmdlet uses a high-performance asynchronous architecture with:
+        - A reader thread that assembles multi-line records
+        - A pool of parser threads that process records in parallel
+        - A writer thread that outputs CSV data
+
+        Use this switch when:
+        - Debugging parsing issues (easier to trace single-threaded execution)
+        - Running on systems where async processing is not supported
+        - Comparing performance between sync and async modes
+        - Output order must match input order exactly
+
+        Note: The cmdlet automatically falls back to synchronous processing if the required
+        .NET concurrent collection types are not available on the system.
+
+    .PARAMETER ParserThreadCount
+        Specifies the number of parallel parser threads for asynchronous processing.
+
+        Default: Number of CPU cores minus 2 (minimum 1)
+
+        Higher values may improve throughput for CPU-intensive detail parsing, but can increase
+        memory usage and context switching overhead. Lower values reduce parallelism but may
+        be more efficient for simpler logs without detail blocks.
+
+        This parameter is ignored when -SynchronousProcessing is specified.
+
+        Recommended values:
+        - For logs with detail blocks (-NoDetailsParsing:$false): ProcessorCount - 2
+        - For simple logs without details (-NoDetailsParsing:$true): 1-2 threads
+        - For memory-constrained systems: 1-2 threads
+
+    .PARAMETER QueueCapacity
+        Specifies the maximum number of records that can be queued between processing stages
+        in asynchronous mode.
+
+        Default: 10000 (optimized for maximum throughput)
+
+        Higher values reduce blocking when the reader outpaces the parsers, but increase memory
+        usage. Lower values reduce memory footprint but may cause the reader to block more often.
+
+        This parameter is ignored when -SynchronousProcessing is specified.
+
+        Memory estimation: Each queued record uses approximately 2KB.
+        - 10000 records ≈ 20MB queue memory
+        - 50000 records ≈ 100MB queue memory
+
     .PARAMETER WhatIf
         Shows what would happen if the cmdlet runs. The cmdlet is not run.
 
@@ -295,6 +344,25 @@
         PACKET detail blocks are skipped, keeping the Details column empty.
         Use when processing very large files and detailed packet structure is not needed.
 
+    .EXAMPLE
+        PS C:\> Convert-DNSDebugLogFile -InputFile "C:\Logs\dns.log" -SynchronousProcessing
+
+        Processes the log file using single-threaded synchronous mode instead of the default
+        async producer-consumer pipeline. Useful for debugging or when output order must match
+        input order exactly.
+
+    .EXAMPLE
+        PS C:\> Convert-DNSDebugLogFile -InputFile "C:\Logs\dns.log" -ParserThreadCount 4 -QueueCapacity 20000
+
+        Processes the log with custom async settings: 4 parser threads and a queue capacity
+        of 20000 records. Use higher values for maximum throughput on multi-core systems.
+
+    .EXAMPLE
+        PS C:\> Convert-DNSDebugLogFile -InputFile "C:\Logs\dns.log" -ParserThreadCount 1
+
+        Processes the log with minimal parallelism (1 parser thread). Still benefits from
+        async I/O separation but uses less memory and CPU. Suitable for simple logs.
+
     .NOTES
         Version  : 1.7.1.1
         Author   : Andi Bellstedt, Copilot
@@ -396,7 +464,24 @@
 
         [Parameter()]
         [switch]
-        $NoDetailsParsing
+        $NoDetailsParsing,
+
+        [Parameter()]
+        [Alias('Sync', 'Sequential')]
+        [switch]
+        $SynchronousProcessing,
+
+        [Parameter()]
+        [Alias('Threads', 'Workers')]
+        [ValidateRange(1, 64)]
+        [int]
+        $ParserThreadCount = [Math]::Max(1, [Environment]::ProcessorCount - 2),
+
+        [Parameter()]
+        [Alias('BufferSize', 'Capacity')]
+        [ValidateRange(100, 1000000)]
+        [int]
+        $QueueCapacity = 1000
     )
 
     begin {
@@ -445,7 +530,6 @@
             Field 16: Question Name
         #>
         $headerTemplate = 'DateTime{0}ThreadId{0}Context{0}PacketId{0}Protocol{0}Direction{0}ClientIP{0}Xid{0}Type{0}Opcode{0}FlagsHex{0}FlagsChar{0}ResponseCode{0}QuestionType{0}QuestionName{0}Information{0}Details{0}ComputerName'
-        #endregion Initialization
 
         # Start a stopwatch to measure total script runtime and a file counter
         $dnsParserStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
@@ -457,6 +541,115 @@
         if ($RemoveSourceFile -and $SkipHeaderValidation) {
             throw "RemoveSourceFile cannot be used with SkipHeaderValidation due to safety concerns. Header validation ensures the file is a valid DNS log before permanent deletion."
         }
+        #endregion Initialization
+
+        #region -- Async Processing Mode Detection
+        # Determine if we should use async processing (default) or sync processing (fallback/explicit)
+        $useAsyncProcessing = $false
+
+        if ($SynchronousProcessing) {
+            # User explicitly requested synchronous processing
+            Write-Verbose "Synchronous processing mode enabled by parameter"
+            $useAsyncProcessing = $false
+        } elseif (-not $script:AsyncSupported) {
+            # System doesn't support async processing (missing concurrent collections)
+            Write-Warning "Async processing not available on this system (missing .NET concurrent collection types). Falling back to synchronous processing."
+            $useAsyncProcessing = $false
+        } else {
+            # Use async processing (default)
+            $useAsyncProcessing = $true
+            Write-Verbose "Async processing mode enabled (ParserThreadCount: $ParserThreadCount, QueueCapacity: $QueueCapacity)"
+        }
+
+        # Initialize async infrastructure if needed
+        $runspacePool = $null
+        $runspaces = $null
+        $contextStats = $null
+        $packetStats = $null
+
+        if ($useAsyncProcessing) {
+            try {
+                #region -- -- Create InitialSessionState with internal functions
+                $initialSessionState = [System.Management.Automation.Runspaces.InitialSessionState]::CreateDefault()
+
+                # Add internal parsing functions to the session state
+                # Note: Internal functions are module-private, so we use Get-Command with -Module parameter
+                $moduleName = 'DNSServer.DebugLogParser'
+                $internalFunctionList = @('ConvertFrom-DnsLogLine', 'ConvertTo-Fqdn', 'ConvertTo-PacketDetailJson')
+                foreach ($functionName in $internalFunctionList) {
+                    $functionInfo = Get-Command -Name $functionName -Module $moduleName -ErrorAction SilentlyContinue
+                    if ($null -eq $functionInfo) {
+                        # Try to get function from module scope using ScriptBlock
+                        $functionInfo = & (Get-Module $moduleName) { Get-Command -Name $args[0] -ErrorAction SilentlyContinue } $functionName
+                    }
+                    if ($functionInfo) {
+                        $functionEntry = [System.Management.Automation.Runspaces.SessionStateFunctionEntry]::new(
+                            $functionName,
+                            $functionInfo.ScriptBlock
+                        )
+                        $initialSessionState.Commands.Add($functionEntry)
+                    } else {
+                        Write-Warning "Internal function '$functionName' not found - async processing may fail"
+                    }
+                }
+
+                # Thread-safe statistics dictionaries (shared across all runspaces)
+                $contextStats = [System.Collections.Concurrent.ConcurrentDictionary[string, int]]::new()
+                $packetStats = [System.Collections.Concurrent.ConcurrentDictionary[string, int]]::new()
+
+                # Add shared statistics dictionaries to session state
+                $statsVarList = @(
+                    @{ Name = 'ContextStats'; Value = $contextStats },
+                    @{ Name = 'PacketStats'; Value = $packetStats }
+                )
+
+                foreach ($varDef in $statsVarList) {
+                    $varEntry = [System.Management.Automation.Runspaces.SessionStateVariableEntry]::new(
+                        $varDef.Name,
+                        $varDef.Value,
+                        ''
+                    )
+                    $initialSessionState.Variables.Add($varEntry)
+                }
+                #endregion -- -- Create InitialSessionState with internal functions
+
+                #region -- -- Create RunspacePool for batch workers
+                # Batch-based approach: Each runspace processes a batch of lines
+                $runspacePool = [System.Management.Automation.Runspaces.RunspaceFactory]::CreateRunspacePool(
+                    1,                      # minRunspaces
+                    $ParserThreadCount,     # maxRunspaces
+                    $initialSessionState,
+                    $Host
+                )
+                $runspacePool.ApartmentState = "MTA"
+                $runspacePool.Open()
+
+                # Initialize runspace tracking list
+                $runspaces = [System.Collections.ArrayList]::new()
+                #endregion -- -- Create RunspacePool for batch workers
+
+                Write-Verbose "Async infrastructure initialized successfully (Batch-based architecture)"
+            } catch {
+                # Failed to initialize async infrastructure - fall back to sync
+                Write-Warning "Failed to initialize async processing infrastructure: $_. Falling back to synchronous processing."
+                $useAsyncProcessing = $false
+
+                # Clean up any partially created resources
+                if ($null -ne $runspacePool) {
+                    try {
+                        $runspacePool.Dispose()
+                    } catch {
+                        Write-Warning "Failed to dispose RunspacePool: $_"
+                    }
+                }
+
+                $runspacePool = $null
+                $contextStats = $null
+                $packetStats = $null
+                $runspaces = $null
+            }
+        }
+        #endregion -- Async Processing Mode Detection
     }
 
     process {
@@ -557,360 +750,667 @@
             # Use the culture's short date and long time patterns for consistent output
             $outputDateTimeFormat = $OutputCulture.DateTimeFormat.ShortDatePattern + ' ' + $OutputCulture.DateTimeFormat.LongTimePattern
 
-            try {
-                $reader = [System.IO.StreamReader]::new($resolvedPath, [System.Text.Encoding]::UTF8, $true, 65536)
+            #region -- Async vs Sync Processing Branch
+            if ($useAsyncProcessing -and $writeCsvData) {
+                #region -- -- Async Processing Mode (Batch-based)
+                # Batch-based parallel processing: Read batches → Spawn runspaces → Collect results → Write output
+                Write-Verbose "Starting async batch processing mode for: '$resolvedPath'"
 
-                # Only create CSV writer if we're outputting CSV data
-                if ($writeCsvData) {
-                    # Check if we should process (WhatIf support)
-                    if ($PSCmdlet.ShouldProcess($currentOutputPath, "Create CSV output file")) {
-                        Write-Verbose "Initializing CSV writer for: '$currentOutputPath'"
-                        $writer = [System.IO.StreamWriter]::new($currentOutputPath, $false, [System.Text.Encoding]::UTF8, 65536)
-                        # Write CSV header
-                        $writer.WriteLine($header)
-                    } else {
-                        # In WhatIf mode, don't create writer
-                        $writeCsvData = $false
+                try {
+                    $collectStatistics = ($OutputType -eq 'Statistic' -or $OutputType -eq 'Both')
+
+                    #region -- -- Define Batch Processing ScriptBlock
+                    # ScriptBlock that processes a batch of lines and returns CSV output
+                    $batchProcessingScript = {
+                        param(
+                            [string[]]$LineBatch,
+                            [System.Globalization.CultureInfo]$InputCulture,
+                            [string[]]$ContextFilter,
+                            [string]$Delimiter,
+                            [string]$ComputerNameValue,
+                            [string]$OutputDateTimeFormat,
+                            [System.Globalization.CultureInfo]$OutputCulture,
+                            [bool]$NoDetailsParsing,
+                            [bool]$CollectStatistics
+                        )
+
+                        $results = [System.Collections.Generic.List[string]]::new()
+                        $lookaheadBuffer = [System.Collections.Generic.Queue[string]]::new(100)
+
+                        # Fill lookahead buffer
+                        foreach ($line in $LineBatch) {
+                            if ($line) { $lookaheadBuffer.Enqueue($line) }
+                        }
+
+                        # Process lines with lookahead
+                        while ($lookaheadBuffer.Count -gt 0) {
+                            $line = $lookaheadBuffer.Dequeue()
+
+                            if ([string]::IsNullOrWhiteSpace($line)) { continue }
+
+                            # Parse main line
+                            $parsed = ConvertFrom-DnsLogLine -Line $line -Culture $InputCulture -ContextFilter $ContextFilter
+                            if ($null -eq $parsed) { continue }
+
+                            $information = $parsed.Information
+                            $details = [string]::Empty
+
+                            # Collect continuation/detail lines
+                            if ($parsed.Context -eq 'Packet') {
+                                if ($lookaheadBuffer.Count -gt 0) {
+                                    $nextLine = $lookaheadBuffer.Peek()
+                                    if ($nextLine.StartsWith('TCP ') -or $nextLine.StartsWith('UDP ')) {
+                                        $information = $nextLine.TrimEnd()
+                                        $null = $lookaheadBuffer.Dequeue()
+
+                                        $detailLineList = [System.Collections.Generic.List[string]]::new()
+                                        while ($lookaheadBuffer.Count -gt 0) {
+                                            $detailLine = $lookaheadBuffer.Peek()
+                                            if ([string]::IsNullOrWhiteSpace($detailLine)) {
+                                                $null = $lookaheadBuffer.Dequeue()
+                                                break
+                                            }
+                                            if ($detailLine.Length -gt 0 -and $detailLine[0] -eq ' ') {
+                                                $detailLineList.Add($detailLine.TrimStart())
+                                                $null = $lookaheadBuffer.Dequeue()
+                                            } else { break }
+                                        }
+
+                                        if ($detailLineList.Count -gt 0 -and -not $NoDetailsParsing) {
+                                            $details = ConvertTo-PacketDetailJson -DetailLines $detailLineList
+                                        }
+                                    } elseif ([string]::IsNullOrWhiteSpace($nextLine)) {
+                                        $null = $lookaheadBuffer.Dequeue()
+                                    }
+                                }
+                            } else {
+                                $continuationTextList = [System.Collections.Generic.List[string]]::new()
+                                while ($lookaheadBuffer.Count -gt 0) {
+                                    $contLine = $lookaheadBuffer.Peek()
+                                    if ([string]::IsNullOrWhiteSpace($contLine)) {
+                                        $null = $lookaheadBuffer.Dequeue()
+                                        break
+                                    }
+                                    if ($contLine.Length -gt 0 -and $contLine[0] -eq ' ') {
+                                        $continuationTextList.Add($contLine.Trim())
+                                        $null = $lookaheadBuffer.Dequeue()
+                                    } else { break }
+                                }
+
+                                if ($continuationTextList.Count -gt 0) {
+                                    if ([string]::IsNullOrEmpty($information)) {
+                                        $information = [string]::Join(' ', $continuationTextList)
+                                    } else {
+                                        $information = $information + ' ' + [string]::Join(' ', $continuationTextList)
+                                    }
+                                }
+                            }
+
+                            # Format CSV line
+                            $formattedDateTime = $parsed.DateTime.ToString($OutputDateTimeFormat, $OutputCulture)
+                            $escapedQuestionName = $parsed.QuestionName -replace '"', '""'
+                            $escapedInformation = $information -replace '"', '""'
+                            $escapedDetails = $details -replace '"', '""'
+
+                            $csvLine = ('{0}' + $Delimiter + '{1}' + $Delimiter + '{2}' + $Delimiter + '{3}' + $Delimiter + '{4}' + $Delimiter + '{5}' + $Delimiter + '{6}' + $Delimiter + '{7}' + $Delimiter + '{8}' + $Delimiter + '{9}' + $Delimiter + '{10}' + $Delimiter + '{11}' + $Delimiter + '{12}' + $Delimiter + '{13}' + $Delimiter + '"{14}"' + $Delimiter + '"{15}"' + $Delimiter + '"{16}"' + $Delimiter + '{17}') -f @(
+                                $formattedDateTime,
+                                $parsed.ThreadId,
+                                $parsed.Context,
+                                $parsed.PacketId,
+                                $parsed.Protocol,
+                                $parsed.Direction,
+                                $parsed.RemoteIP,
+                                $parsed.Xid,
+                                $(if ($parsed.QueryResponse -eq 'R') { 'Response' } elseif ($parsed.Context -eq 'Packet') { 'Query' } else { '' }),
+                                $(switch ($parsed.Opcode) { 'Q' { 'Standard' } 'N' { 'Notify' } 'U' { 'Update' } '?' { 'Unknown' } default { $parsed.Opcode } }),
+                                $parsed.FlagsHex,
+                                $(switch ($parsed.FlagsChar) { 'A' { 'Authoritative' } 'T' { 'Truncated' } 'D' { 'RecursionDesired' } 'R' { 'RecursionAvailable' } default { $parsed.FlagsChar } }),
+                                $parsed.ResponseCode,
+                                $parsed.QuestionType,
+                                $escapedQuestionName,
+                                $escapedInformation,
+                                $escapedDetails,
+                                $ComputerNameValue
+                            )
+
+                            $results.Add($csvLine)
+
+                            # Collect statistics
+                            if ($CollectStatistics) {
+                                $dateOnly = $parsed.DateTime.Date.ToString('yyyy-MM-dd', [System.Globalization.CultureInfo]::InvariantCulture)
+                                $contextKey = $dateOnly + '|' + $parsed.Context
+
+                                while ($true) {
+                                    $currentValue = 0
+                                    $null = $ContextStats.TryGetValue($contextKey, [ref]$currentValue)
+                                    if ($ContextStats.TryUpdate($contextKey, $currentValue + 1, $currentValue)) { break }
+                                    if ($ContextStats.TryAdd($contextKey, 1)) { break }
+                                }
+
+                                if ($parsed.Context -eq 'Packet' -and -not [string]::IsNullOrEmpty($parsed.RemoteIP)) {
+                                    $packetKey = $dateOnly + '|' + $parsed.RemoteIP + '|' + $parsed.Protocol + '|' + $parsed.Direction + '|' + $parsed.QuestionType
+                                    while ($true) {
+                                        $currentValue = 0
+                                        $null = $PacketStats.TryGetValue($packetKey, [ref]$currentValue)
+                                        if ($PacketStats.TryUpdate($packetKey, $currentValue + 1, $currentValue)) { break }
+                                        if ($PacketStats.TryAdd($packetKey, 1)) { break }
+                                    }
+                                }
+                            }
+                        }
+
+                        return $results.ToArray()
                     }
+                    #endregion -- -- Define Batch Processing ScriptBlock
+
+                    #region -- -- Read file and spawn batch runspaces
+                    if ($PSCmdlet.ShouldProcess($currentOutputPath, "Create CSV output file (async batch mode)")) {
+                        $fileReader = [System.IO.File]::Open($resolvedPath, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+                        $streamReader = [System.IO.StreamReader]::new($fileReader, [System.Text.Encoding]::UTF8)
+                        $fileWriter = [System.IO.StreamWriter]::new($currentOutputPath, $false, [System.Text.Encoding]::UTF8, 65536)
+                        $fileWriter.WriteLine($header)
+
+                        # Skip header lines
+                        for ($i = 0; $i -lt $skipLines; $i++) {
+                            if (-not $streamReader.EndOfStream) { $null = $streamReader.ReadLine() }
+                        }
+
+                        # Determine batch size based on file size
+                        if (($fileReader.Length / 1MB) -gt 10) { [int]$batchSize = 10000 } else { [int]$batchSize = 2000 }
+                        Write-Verbose "Batch size: $batchSize lines per runspace"
+
+                        $lineIndex = 0
+                        $lineBuffer = New-Object string[] $batchSize
+                        $totalBatches = 0
+
+                        do {
+                            $fileLine = $streamReader.ReadLine()
+                            if ($fileLine) {
+                                $lineBuffer[$lineIndex] = $fileLine
+                                $lineIndex++
+                            }
+
+                            # Spawn runspace when batch is full or EOF reached
+                            if (($lineIndex -ge $batchSize) -or ($null -eq $fileLine) -or $streamReader.EndOfStream) {
+                                if ($lineIndex -gt 0) {
+                                    $powerShell = [PowerShell]::Create()
+                                    $powerShell.RunspacePool = $runspacePool
+                                    $null = $powerShell.AddScript($batchProcessingScript)
+                                    $null = $powerShell.AddArgument($lineBuffer[0..($lineIndex - 1)])
+                                    $null = $powerShell.AddArgument($InputCulture)
+                                    $null = $powerShell.AddArgument($ContextFilter)
+                                    $null = $powerShell.AddArgument($Delimiter)
+                                    $null = $powerShell.AddArgument($computerNameValue)
+                                    $null = $powerShell.AddArgument($outputDateTimeFormat)
+                                    $null = $powerShell.AddArgument($OutputCulture)
+                                    $null = $powerShell.AddArgument($NoDetailsParsing.IsPresent)
+                                    $null = $powerShell.AddArgument($collectStatistics)
+
+                                    $null = $runspaces.Add(@{
+                                            PowerShell = $powerShell
+                                            Handle     = $powerShell.BeginInvoke()
+                                            BatchSize  = $lineIndex
+                                        })
+
+                                    $totalBatches++
+                                    $lineBuffer = New-Object string[] $batchSize
+                                    $lineIndex = 0
+                                }
+                            }
+                        } while ($streamReader.EndOfStream -eq $false)
+
+                        $streamReader.Close()
+                        $fileReader.Close()
+
+                        Write-Verbose "Created $totalBatches batch runspaces for processing"
+                        #endregion -- -- Read file and spawn batch runspaces
+
+                        #region -- -- Collect results from runspaces
+                        $completedCount = 0
+                        $totalRunspaces = $runspaces.Count
+
+                        while ($runspaces.Count -gt 0) {
+                            $runspacesToRemove = [System.Collections.ArrayList]::new()
+
+                            foreach ($runspace in $runspaces) {
+                                if ($runspace.Handle.IsCompleted) {
+                                    $completedCount++
+                                    Write-Progress -Activity "Processing DNS log file: $([System.IO.Path]::GetFileName($resolvedPath))" -Status "Collecting results from batch $completedCount of $totalRunspaces" -PercentComplete ($completedCount / $totalRunspaces * 100)
+
+                                    try {
+                                        $batchResults = $runspace.PowerShell.EndInvoke($runspace.Handle)
+                                        foreach ($csvLine in $batchResults) {
+                                            $fileWriter.WriteLine($csvLine)
+                                        }
+                                    } catch {
+                                        Write-Error "Batch processing error: $_"
+                                    }
+
+                                    $runspace.PowerShell.Dispose()
+                                    $null = $runspacesToRemove.Add($runspace)
+                                }
+                            }
+
+                            foreach ($runspaceToRemove in $runspacesToRemove) {
+                                $runspaces.Remove($runspaceToRemove)
+                            }
+
+                            if ($runspaces.Count -gt 0) {
+                                Start-Sleep -Milliseconds 50
+                            }
+                        }
+
+                        $fileWriter.Flush()
+                        $fileWriter.Close()
+                        Write-Progress -Activity "Processing DNS log file" -Completed
+                        #endregion -- -- Collect results from runspaces
+
+                        Write-Verbose "Async batch processing completed for: '$resolvedPath'"
+
+                        # Copy statistics from ConcurrentDictionary to local Dictionary for statistics file writing
+                        if ($collectStatistics) {
+                            $contextStatistics = [System.Collections.Generic.Dictionary[string, int]]::new()
+                            $packetStatistics = [System.Collections.Generic.Dictionary[string, int]]::new()
+
+                            foreach ($kvp in $contextStats.GetEnumerator()) {
+                                $contextStatistics[$kvp.Key] = $kvp.Value
+                            }
+                            foreach ($kvp in $packetStats.GetEnumerator()) {
+                                $packetStatistics[$kvp.Key] = $kvp.Value
+                            }
+
+                            # Clear concurrent dictionaries for next file
+                            $contextStats.Clear()
+                            $packetStats.Clear()
+                        }
+                    }
+                } catch {
+                    $errorRecord = [System.Management.Automation.ErrorRecord]::new(
+                        [System.Exception]::new("Async batch processing failed: $_"),
+                        'AsyncBatchProcessingFailed',
+                        [System.Management.Automation.ErrorCategory]::NotSpecified,
+                        $resolvedPath
+                    )
+                    $PSCmdlet.WriteError($errorRecord)
+                    continue
+                }
+                #endregion -- -- Async Processing Mode (Batch-based)
+            } else {
+                #region -- -- Synchronous Processing Mode
+                # Original synchronous processing code path
+
+                # Use StreamReader for maximum performance with large files
+                $reader = $null
+                $writer = $null
+                $lineCount = 0
+                $parsedCount = 0
+
+                # Initialize statistics dictionaries if requested (using Dictionary for performance)
+                $contextStatistics = $null
+                $packetStatistics = $null
+                if ($OutputType -eq 'Statistic' -or $OutputType -eq 'Both') {
+                    $contextStatistics = [System.Collections.Generic.Dictionary[string, int]]::new()
+                    $packetStatistics = [System.Collections.Generic.Dictionary[string, int]]::new()
                 }
 
-                # Skip header lines (validated count from Test-DnsDebugLogHeader)
-                for ($i = 0; $i -lt $skipLines -and -not $reader.EndOfStream; $i++) {
-                    $null = $reader.ReadLine()
-                    $lineCount++
-                }
+                try {
+                    $reader = [System.IO.StreamReader]::new($resolvedPath, [System.Text.Encoding]::UTF8, $true, 65536)
 
-                #region -- Process data lines
-                # Multi-line record processing:
-                # - PACKET context can have detail blocks (TCP/UDP info + indented detail lines until empty line)
-                # - Other contexts can have continuation lines (indented lines following the main line)
-                # Records are delimited by: empty lines OR lines starting with a date (new record)
+                    # Only create CSV writer if we're outputting CSV data
+                    if ($writeCsvData) {
+                        # Check if we should process (WhatIf support)
+                        if ($PSCmdlet.ShouldProcess($currentOutputPath, "Create CSV output file")) {
+                            Write-Verbose "Initializing CSV writer for: '$currentOutputPath'"
+                            $writer = [System.IO.StreamWriter]::new($currentOutputPath, $false, [System.Text.Encoding]::UTF8, 65536)
+                            # Write CSV header
+                            $writer.WriteLine($header)
+                        } else {
+                            # In WhatIf mode, don't create writer
+                            $writeCsvData = $false
+                        }
+                    }
 
-                # Streaming lookahead buffer implementation:
-                # - Maintains a small queue of upcoming lines for multi-line record detection
-                # - Avoids loading entire file into memory (OOM prevention for 100MB+ files)
-                # - Buffer size of 100 lines provides sufficient lookahead for detail blocks
-                $bufferSize = 100
-                $lookaheadBuffer = [System.Collections.Generic.Queue[string]]::new($bufferSize)
+                    # Skip header lines (validated count from Test-DnsDebugLogHeader)
+                    for ($i = 0; $i -lt $skipLines -and -not $reader.EndOfStream; $i++) {
+                        $null = $reader.ReadLine()
+                        $lineCount++
+                    }
 
-                # Pre-fill the lookahead buffer
-                while (-not $reader.EndOfStream -and $lookaheadBuffer.Count -lt $bufferSize) {
-                    $lookaheadBuffer.Enqueue($reader.ReadLine())
-                    $lineCount++
-                }
+                    #region -- Process data lines
+                    # Multi-line record processing:
+                    # - PACKET context can have detail blocks (TCP/UDP info + indented detail lines until empty line)
+                    # - Other contexts can have continuation lines (indented lines following the main line)
+                    # Records are delimited by: empty lines OR lines starting with a date (new record)
 
-                # Process lines using streaming approach with lookahead capability
-                while ($lookaheadBuffer.Count -gt 0) {
-                    # Dequeue next line for processing
-                    $line = $lookaheadBuffer.Dequeue()
+                    # Streaming lookahead buffer implementation:
+                    # - Maintains a small queue of upcoming lines for multi-line record detection
+                    # - Avoids loading entire file into memory (OOM prevention for 100MB+ files)
+                    # - Buffer size of 100 lines provides sufficient lookahead for detail blocks
+                    $bufferSize = 100
+                    $lookaheadBuffer = [System.Collections.Generic.Queue[string]]::new($bufferSize)
 
-                    # Refill buffer to maintain lookahead capability
-                    if (-not $reader.EndOfStream) {
+                    # Pre-fill the lookahead buffer
+                    while (-not $reader.EndOfStream -and $lookaheadBuffer.Count -lt $bufferSize) {
                         $lookaheadBuffer.Enqueue($reader.ReadLine())
                         $lineCount++
                     }
 
-                    # Skip empty lines (record separators)
-                    if ([string]::IsNullOrWhiteSpace($line)) {
-                        continue
-                    }
+                    # Process lines using streaming approach with lookahead capability
+                    while ($lookaheadBuffer.Count -gt 0) {
+                        # Dequeue next line for processing
+                        $line = $lookaheadBuffer.Dequeue()
 
-                    # Parse the main record line
-                    $parsed = ConvertFrom-DnsLogLine -Line $line -Culture $InputCulture -ContextFilter $ContextFilter
-                    if ($null -eq $parsed) { continue }
+                        # Refill buffer to maintain lookahead capability
+                        if (-not $reader.EndOfStream) {
+                            $lookaheadBuffer.Enqueue($reader.ReadLine())
+                            $lineCount++
+                        }
 
-                    # Initialize multi-line record fields
-                    $information = $parsed.Information
-                    $details = [string]::Empty
+                        # Skip empty lines (record separators)
+                        if ([string]::IsNullOrWhiteSpace($line)) {
+                            continue
+                        }
 
-                    #region -- -- Collect continuation/detail lines
-                    if ($parsed.Context -eq 'Packet') {
-                        # PACKET context: Check for detail block
-                        # Detail blocks start with "TCP " or "UDP " on the next line (no date prefix)
-                        # followed by indented lines, terminated by empty line
+                        # Parse the main record line
+                        $parsed = ConvertFrom-DnsLogLine -Line $line -Culture $InputCulture -ContextFilter $ContextFilter
+                        if ($null -eq $parsed) { continue }
 
-                        if ($lookaheadBuffer.Count -gt 0) {
-                            # Peek at next line without allocating array
-                            $nextLine = $lookaheadBuffer.Peek()
+                        # Initialize multi-line record fields
+                        $information = $parsed.Information
+                        $details = [string]::Empty
 
-                            # Check if next line starts with "TCP " or "UDP " (detail block indicator)
-                            if ($nextLine.StartsWith('TCP ') -or $nextLine.StartsWith('UDP ')) {
-                                # This is a detail block - extract the TCP/UDP info line
-                                $information = $nextLine.TrimEnd()
+                        #region -- -- Collect continuation/detail lines
+                        if ($parsed.Context -eq 'Packet') {
+                            # PACKET context: Check for detail block
+                            # Detail blocks start with "TCP " or "UDP " on the next line (no date prefix)
+                            # followed by indented lines, terminated by empty line
 
-                                # Consume the TCP/UDP line from buffer
-                                $null = $lookaheadBuffer.Dequeue()
-                                if (-not $reader.EndOfStream) {
-                                    $lookaheadBuffer.Enqueue($reader.ReadLine())
-                                    $lineCount++
-                                }
+                            if ($lookaheadBuffer.Count -gt 0) {
+                                # Peek at next line without allocating array
+                                $nextLine = $lookaheadBuffer.Peek()
 
-                                # Collect all indented detail lines until empty line or new record
-                                $detailLineList = [System.Collections.Generic.List[string]]::new()
+                                # Check if next line starts with "TCP " or "UDP " (detail block indicator)
+                                if ($nextLine.StartsWith('TCP ') -or $nextLine.StartsWith('UDP ')) {
+                                    # This is a detail block - extract the TCP/UDP info line
+                                    $information = $nextLine.TrimEnd()
 
-                                while ($lookaheadBuffer.Count -gt 0) {
-                                    # Peek at next line without allocating array
-                                    $detailLine = $lookaheadBuffer.Peek()
-
-                                    # Empty line terminates the detail block
-                                    if ([string]::IsNullOrWhiteSpace($detailLine)) {
-                                        # Consume empty line
-                                        $null = $lookaheadBuffer.Dequeue()
-                                        if (-not $reader.EndOfStream) {
-                                            $lookaheadBuffer.Enqueue($reader.ReadLine())
-                                            $lineCount++
-                                        }
-                                        break
+                                    # Consume the TCP/UDP line from buffer
+                                    $null = $lookaheadBuffer.Dequeue()
+                                    if (-not $reader.EndOfStream) {
+                                        $lookaheadBuffer.Enqueue($reader.ReadLine())
+                                        $lineCount++
                                     }
 
-                                    # Check if line starts with whitespace (continuation) or is a new record (starts with date)
-                                    if ($detailLine.Length -gt 0 -and $detailLine[0] -eq ' ') {
-                                        # Continuation line - trim leading whitespace (2 spaces indent) but preserve structure
-                                        $detailLineList.Add($detailLine.TrimStart())
+                                    # Collect all indented detail lines until empty line or new record
+                                    $detailLineList = [System.Collections.Generic.List[string]]::new()
 
-                                        # Consume the detail line from buffer
-                                        $null = $lookaheadBuffer.Dequeue()
-                                        if (-not $reader.EndOfStream) {
-                                            $lookaheadBuffer.Enqueue($reader.ReadLine())
-                                            $lineCount++
+                                    while ($lookaheadBuffer.Count -gt 0) {
+                                        # Peek at next line without allocating array
+                                        $detailLine = $lookaheadBuffer.Peek()
+
+                                        # Empty line terminates the detail block
+                                        if ([string]::IsNullOrWhiteSpace($detailLine)) {
+                                            # Consume empty line
+                                            $null = $lookaheadBuffer.Dequeue()
+                                            if (-not $reader.EndOfStream) {
+                                                $lookaheadBuffer.Enqueue($reader.ReadLine())
+                                                $lineCount++
+                                            }
+                                            break
                                         }
-                                    } else {
-                                        # New record detected - don't consume this line
-                                        break
+
+                                        # Check if line starts with whitespace (continuation) or is a new record (starts with date)
+                                        if ($detailLine.Length -gt 0 -and $detailLine[0] -eq ' ') {
+                                            # Continuation line - trim leading whitespace (2 spaces indent) but preserve structure
+                                            $detailLineList.Add($detailLine.TrimStart())
+
+                                            # Consume the detail line from buffer
+                                            $null = $lookaheadBuffer.Dequeue()
+                                            if (-not $reader.EndOfStream) {
+                                                $lookaheadBuffer.Enqueue($reader.ReadLine())
+                                                $lineCount++
+                                            }
+                                        } else {
+                                            # New record detected - don't consume this line
+                                            break
+                                        }
+                                    }
+
+                                    # Parse detail lines into JSON structure if we have any (unless NoDetailsParsing is enabled)
+                                    if ($detailLineList.Count -gt 0 -and -not $NoDetailsParsing) {
+                                        $details = ConvertTo-PacketDetailJson -DetailLines $detailLineList
+                                    }
+                                } elseif ([string]::IsNullOrWhiteSpace($nextLine)) {
+                                    # Empty line after PACKET without details - skip it
+                                    $null = $lookaheadBuffer.Dequeue()
+                                    if (-not $reader.EndOfStream) {
+                                        $lookaheadBuffer.Enqueue($reader.ReadLine())
+                                        $lineCount++
                                     }
                                 }
-
-                                # Parse detail lines into JSON structure if we have any (unless NoDetailsParsing is enabled)
-                                if ($detailLineList.Count -gt 0 -and -not $NoDetailsParsing) {
-                                    $details = ConvertTo-PacketDetailJson -DetailLines $detailLineList
-                                }
-                            } elseif ([string]::IsNullOrWhiteSpace($nextLine)) {
-                                # Empty line after PACKET without details - skip it
-                                $null = $lookaheadBuffer.Dequeue()
-                                if (-not $reader.EndOfStream) {
-                                    $lookaheadBuffer.Enqueue($reader.ReadLine())
-                                    $lineCount++
-                                }
+                                # Otherwise, nextLine is a new record - don't consume it
                             }
-                            # Otherwise, nextLine is a new record - don't consume it
-                        }
-                    } else {
-                        # Non-PACKET context: Collect continuation lines (indented lines) into Information
-                        # Continuation lines start with whitespace and are appended to the main line's information
-                        $continuationTextList = [System.Collections.Generic.List[string]]::new()
-
-                        while ($lookaheadBuffer.Count -gt 0) {
-                            # Peek at next line without allocating array
-                            $contLine = $lookaheadBuffer.Peek()
-
-                            # Empty line terminates continuation
-                            if ([string]::IsNullOrWhiteSpace($contLine)) {
-                                # Consume empty line
-                                $null = $lookaheadBuffer.Dequeue()
-                                if (-not $reader.EndOfStream) {
-                                    $lookaheadBuffer.Enqueue($reader.ReadLine())
-                                    $lineCount++
-                                }
-                                break
-                            }
-
-                            # Check if line starts with whitespace (continuation)
-                            if ($contLine.Length -gt 0 -and $contLine[0] -eq ' ') {
-                                # Continuation line - trim whitespace and add to list
-                                $continuationTextList.Add($contLine.Trim())
-
-                                # Consume the continuation line from buffer
-                                $null = $lookaheadBuffer.Dequeue()
-                                if (-not $reader.EndOfStream) {
-                                    $lookaheadBuffer.Enqueue($reader.ReadLine())
-                                    $lineCount++
-                                }
-                            } else {
-                                # New record detected - don't consume this line
-                                break
-                            }
-                        }
-
-                        # Combine continuation lines with original information
-                        if ($continuationTextList.Count -gt 0) {
-                            if ([string]::IsNullOrEmpty($information)) {
-                                $information = [string]::Join(' ', $continuationTextList)
-                            } else {
-                                $information = $information + ' ' + [string]::Join(' ', $continuationTextList)
-                            }
-                        }
-                    }
-                    #endregion -- -- Collect continuation/detail lines
-
-                    #region -- -- Build CSV line
-                    if ($writeCsvData) {
-                        # Format DateTime using OutputCulture for culture-aware output
-                        $formattedDateTime = $parsed.DateTime.ToString($outputDateTimeFormat, $OutputCulture)
-
-                        # Escape double quotes in text fields for proper CSV formatting
-                        # Standard CSV escaping: replace " with ""
-                        $escapedQuestionName = $parsed.QuestionName -replace '"', '""'
-                        $escapedInformation = $information -replace '"', '""'
-                        $escapedDetails = $details -replace '"', '""'
-
-                        # Build CSV line with all 18 columns including Details
-                        $csvLine = ('{0}' + $Delimiter + '{1}' + $Delimiter + '{2}' + $Delimiter + '{3}' + $Delimiter + '{4}' + $Delimiter + '{5}' + $Delimiter + '{6}' + $Delimiter + '{7}' + $Delimiter + '{8}' + $Delimiter + '{9}' + $Delimiter + '{10}' + $Delimiter + '{11}' + $Delimiter + '{12}' + $Delimiter + '{13}' + $Delimiter + '"{14}"' + $Delimiter + '"{15}"' + $Delimiter + '"{16}"' + $Delimiter + '{17}') -f @(
-                            $formattedDateTime,
-                            $parsed.ThreadId,
-                            $parsed.Context,
-                            $parsed.PacketId,
-                            $parsed.Protocol,
-                            $parsed.Direction,
-                            $parsed.RemoteIP,
-                            $parsed.Xid,
-                            $(
-                                if ($parsed.QueryResponse -eq 'R') { 'Response' }
-                                elseif ($parsed.Context -eq 'Packet') { 'Query' }
-                                else { '' }
-                            ),
-                            $(
-                                switch ($parsed.Opcode) {
-                                    'Q' { 'Standard' }
-                                    'N' { 'Notify' }
-                                    'U' { 'Update' }
-                                    '?' { 'Unknown' }
-                                    default { $parsed.Opcode }
-                                }
-                            ),
-                            $parsed.FlagsHex,
-                            $(
-                                switch ($parsed.FlagsChar) {
-                                    'A' { 'Authoritative' }
-                                    'T' { 'Truncated' }
-                                    'D' { 'RecursionDesired' }
-                                    'R' { 'RecursionAvailable' }
-                                    default { $parsed.FlagsChar }
-                                }
-                            ),
-                            $parsed.ResponseCode,
-                            $parsed.QuestionType,
-                            $escapedQuestionName,
-                            $escapedInformation,
-                            $escapedDetails,
-                            $computerNameValue
-                        )
-
-                        # Write CSV line
-                        $writer.WriteLine($csvLine)
-                    }
-                    #endregion -- -- Build CSV line
-
-                    $parsedCount++
-                    $progressCounter++
-
-                    # Update progress every 1000 records for performance efficiency
-                    if ($progressCounter -ge $progressUpdateInterval) {
-                        Write-Progress -Activity "Processing DNS log file: $([System.IO.Path]::GetFileName($resolvedPath))" -Status "Parsed $parsedCount records ($lineCount lines read)" -PercentComplete -1
-                        $progressCounter = 0
-                    }
-
-                    #region -- -- Collect statistics
-                    if ($null -ne $contextStatistics) {
-                        # Extract date portion only (no time) for daily grouping
-                        $dateOnly = $parsed.DateTime.Date.ToString('yyyy-MM-dd', [System.Globalization.CultureInfo]::InvariantCulture)
-
-                        # Context statistics: count all records by Date|Context
-                        $contextKey = $dateOnly + '|' + $parsed.Context
-                        if ($contextStatistics.ContainsKey($contextKey)) {
-                            $contextStatistics[$contextKey]++
                         } else {
-                            $contextStatistics[$contextKey] = 1
+                            # Non-PACKET context: Collect continuation lines (indented lines) into Information
+                            # Continuation lines start with whitespace and are appended to the main line's information
+                            $continuationTextList = [System.Collections.Generic.List[string]]::new()
+
+                            while ($lookaheadBuffer.Count -gt 0) {
+                                # Peek at next line without allocating array
+                                $contLine = $lookaheadBuffer.Peek()
+
+                                # Empty line terminates continuation
+                                if ([string]::IsNullOrWhiteSpace($contLine)) {
+                                    # Consume empty line
+                                    $null = $lookaheadBuffer.Dequeue()
+                                    if (-not $reader.EndOfStream) {
+                                        $lookaheadBuffer.Enqueue($reader.ReadLine())
+                                        $lineCount++
+                                    }
+                                    break
+                                }
+
+                                # Check if line starts with whitespace (continuation)
+                                if ($contLine.Length -gt 0 -and $contLine[0] -eq ' ') {
+                                    # Continuation line - trim whitespace and add to list
+                                    $continuationTextList.Add($contLine.Trim())
+
+                                    # Consume the continuation line from buffer
+                                    $null = $lookaheadBuffer.Dequeue()
+                                    if (-not $reader.EndOfStream) {
+                                        $lookaheadBuffer.Enqueue($reader.ReadLine())
+                                        $lineCount++
+                                    }
+                                } else {
+                                    # New record detected - don't consume this line
+                                    break
+                                }
+                            }
+
+                            # Combine continuation lines with original information
+                            if ($continuationTextList.Count -gt 0) {
+                                if ([string]::IsNullOrEmpty($information)) {
+                                    $information = [string]::Join(' ', $continuationTextList)
+                                } else {
+                                    $information = $information + ' ' + [string]::Join(' ', $continuationTextList)
+                                }
+                            }
+                        }
+                        #endregion -- -- Collect continuation/detail lines
+
+                        #region -- -- Build CSV line
+                        if ($writeCsvData) {
+                            # Format DateTime using OutputCulture for culture-aware output
+                            $formattedDateTime = $parsed.DateTime.ToString($outputDateTimeFormat, $OutputCulture)
+
+                            # Escape double quotes in text fields for proper CSV formatting
+                            # Standard CSV escaping: replace " with ""
+                            $escapedQuestionName = $parsed.QuestionName -replace '"', '""'
+                            $escapedInformation = $information -replace '"', '""'
+                            $escapedDetails = $details -replace '"', '""'
+
+                            # Build CSV line with all 18 columns including Details
+                            $csvLine = ('{0}' + $Delimiter + '{1}' + $Delimiter + '{2}' + $Delimiter + '{3}' + $Delimiter + '{4}' + $Delimiter + '{5}' + $Delimiter + '{6}' + $Delimiter + '{7}' + $Delimiter + '{8}' + $Delimiter + '{9}' + $Delimiter + '{10}' + $Delimiter + '{11}' + $Delimiter + '{12}' + $Delimiter + '{13}' + $Delimiter + '"{14}"' + $Delimiter + '"{15}"' + $Delimiter + '"{16}"' + $Delimiter + '{17}') -f @(
+                                $formattedDateTime,
+                                $parsed.ThreadId,
+                                $parsed.Context,
+                                $parsed.PacketId,
+                                $parsed.Protocol,
+                                $parsed.Direction,
+                                $parsed.RemoteIP,
+                                $parsed.Xid,
+                                $(
+                                    if ($parsed.QueryResponse -eq 'R') { 'Response' }
+                                    elseif ($parsed.Context -eq 'Packet') { 'Query' }
+                                    else { '' }
+                                ),
+                                $(
+                                    switch ($parsed.Opcode) {
+                                        'Q' { 'Standard' }
+                                        'N' { 'Notify' }
+                                        'U' { 'Update' }
+                                        '?' { 'Unknown' }
+                                        default { $parsed.Opcode }
+                                    }
+                                ),
+                                $parsed.FlagsHex,
+                                $(
+                                    switch ($parsed.FlagsChar) {
+                                        'A' { 'Authoritative' }
+                                        'T' { 'Truncated' }
+                                        'D' { 'RecursionDesired' }
+                                        'R' { 'RecursionAvailable' }
+                                        default { $parsed.FlagsChar }
+                                    }
+                                ),
+                                $parsed.ResponseCode,
+                                $parsed.QuestionType,
+                                $escapedQuestionName,
+                                $escapedInformation,
+                                $escapedDetails,
+                                $computerNameValue
+                            )
+
+                            # Write CSV line
+                            $writer.WriteLine($csvLine)
+                        }
+                        #endregion -- -- Build CSV line
+
+                        $parsedCount++
+                        $progressCounter++
+
+                        # Update progress every 1000 records for performance efficiency
+                        if ($progressCounter -ge $progressUpdateInterval) {
+                            Write-Progress -Activity "Processing DNS log file: $([System.IO.Path]::GetFileName($resolvedPath))" -Status "Parsed $parsedCount records ($lineCount lines read)" -PercentComplete -1
+                            $progressCounter = 0
                         }
 
-                        # Packet statistics: count only standard PACKET records (with RemoteIP) by Date|ClientIP|Protocol|Direction|QuestionType
-                        # Info-only PACKET records (e.g., "Response packet does not match") have empty RemoteIP and are excluded
-                        if ($parsed.Context -eq 'Packet' -and -not [string]::IsNullOrEmpty($parsed.RemoteIP)) {
-                            $packetKey = $dateOnly + '|' + $parsed.RemoteIP + '|' + $parsed.Protocol + '|' + $parsed.Direction + '|' + $parsed.QuestionType
-                            if ($packetStatistics.ContainsKey($packetKey)) {
-                                $packetStatistics[$packetKey]++
+                        #region -- -- Collect statistics
+                        if ($null -ne $contextStatistics) {
+                            # Extract date portion only (no time) for daily grouping
+                            $dateOnly = $parsed.DateTime.Date.ToString('yyyy-MM-dd', [System.Globalization.CultureInfo]::InvariantCulture)
+
+                            # Context statistics: count all records by Date|Context
+                            $contextKey = $dateOnly + '|' + $parsed.Context
+                            if ($contextStatistics.ContainsKey($contextKey)) {
+                                $contextStatistics[$contextKey]++
                             } else {
-                                $packetStatistics[$packetKey] = 1
-                            }
-                        }
-                    }
-                    #endregion -- -- Collect statistics
-                }
-                #endregion Process data lines
-
-                # Complete progress bar
-                Write-Progress -Activity "Processing DNS log file: $([System.IO.Path]::GetFileName($resolvedPath))" -Completed
-
-                Write-Verbose "Completed parsing: $lineCount total lines, $parsedCount valid entries"
-                if ($writeCsvData) {
-                    Write-Verbose "Successfully exported $parsedCount DNS log entries to: '$currentOutputPath'"
-                }
-
-                # Write context statistics file if requested (_Statistic)
-                if ($null -ne $contextStatistics -and $contextStatistics.Count -gt 0) {
-                    Write-Verbose "Generating context statistics file with $($contextStatistics.Count) unique groups"
-                    $contextStatPath = [System.IO.Path]::Combine(
-                        [System.IO.Path]::GetDirectoryName($currentOutputPath),
-                        [System.IO.Path]::GetFileNameWithoutExtension($currentOutputPath) + '_Statistic' + [System.IO.Path]::GetExtension($currentOutputPath)
-                    )
-
-                    # Check if we should process (WhatIf support)
-                    if ($PSCmdlet.ShouldProcess($contextStatPath, "Create context statistics output file")) {
-                        $statWriter = $null
-                        try {
-                            $statWriter = [System.IO.StreamWriter]::new($contextStatPath, $false, [System.Text.Encoding]::UTF8, 65536)
-
-                            # Write context statistics header
-                            $statWriter.WriteLine('Date' + $Delimiter + 'Context' + $Delimiter + 'Count' + $Delimiter + 'ComputerName')
-
-                            # Write context statistics data (sort by Date, then Context for better readability)
-                            foreach ($kvp in ($contextStatistics.GetEnumerator() | Sort-Object -Property Key)) {
-                                $keyParts = $kvp.Key.Split('|')
-                                # Key format: Date|Context
-                                $statLine = $keyParts[0] + $Delimiter + $keyParts[1] + $Delimiter + $kvp.Value.ToString() + $Delimiter + $computerNameValue
-                                $statWriter.WriteLine($statLine)
+                                $contextStatistics[$contextKey] = 1
                             }
 
-                            Write-Verbose "Successfully exported context statistics to: '$contextStatPath' ($($contextStatistics.Count) unique groups)"
-                        } finally {
-                            if ($null -ne $statWriter) { $statWriter.Dispose() }
-                        }
-                    }
-                }
-
-                # Write packet statistics file if requested (_PacketStatistic)
-                if ($null -ne $packetStatistics -and $packetStatistics.Count -gt 0) {
-                    Write-Verbose "Generating packet statistics file with $($packetStatistics.Count) unique groups"
-                    $packetStatPath = [System.IO.Path]::Combine(
-                        [System.IO.Path]::GetDirectoryName($currentOutputPath),
-                        [System.IO.Path]::GetFileNameWithoutExtension($currentOutputPath) + '_PacketStatistic' + [System.IO.Path]::GetExtension($currentOutputPath)
-                    )
-
-                    # Check if we should process (WhatIf support)
-                    if ($PSCmdlet.ShouldProcess($packetStatPath, "Create packet statistics output file")) {
-                        $statWriter = $null
-                        try {
-                            $statWriter = [System.IO.StreamWriter]::new($packetStatPath, $false, [System.Text.Encoding]::UTF8, 65536)
-
-                            # Write packet statistics header (ComputerName is always included at the end)
-                            $statWriter.WriteLine('Date' + $Delimiter + 'ClientIP' + $Delimiter + 'Protocol' + $Delimiter + 'Direction' + $Delimiter + 'QuestionType' + $Delimiter + 'Count' + $Delimiter + 'ComputerName')
-
-                            # Write packet statistics data (sort by Date, then ClientIP for better readability)
-                            foreach ($kvp in ($packetStatistics.GetEnumerator() | Sort-Object -Property Key)) {
-                                $keyParts = $kvp.Key.Split('|')
-                                # Key format: Date|ClientIP|Protocol|Direction|QuestionType
-                                $statLine = $keyParts[0] + $Delimiter + $keyParts[1] + $Delimiter + $keyParts[2] + $Delimiter + $keyParts[3] + $Delimiter + $keyParts[4] + $Delimiter + $kvp.Value.ToString() + $Delimiter + $computerNameValue
-                                $statWriter.WriteLine($statLine)
+                            # Packet statistics: count only standard PACKET records (with RemoteIP) by Date|ClientIP|Protocol|Direction|QuestionType
+                            # Info-only PACKET records (e.g., "Response packet does not match") have empty RemoteIP and are excluded
+                            if ($parsed.Context -eq 'Packet' -and -not [string]::IsNullOrEmpty($parsed.RemoteIP)) {
+                                $packetKey = $dateOnly + '|' + $parsed.RemoteIP + '|' + $parsed.Protocol + '|' + $parsed.Direction + '|' + $parsed.QuestionType
+                                if ($packetStatistics.ContainsKey($packetKey)) {
+                                    $packetStatistics[$packetKey]++
+                                } else {
+                                    $packetStatistics[$packetKey] = 1
+                                }
                             }
-
-                            Write-Verbose "Successfully exported packet statistics to: '$packetStatPath' ($($packetStatistics.Count) unique groups)"
-                        } finally {
-                            if ($null -ne $statWriter) { $statWriter.Dispose() }
                         }
+                        #endregion -- -- Collect statistics
+                    }
+                    #endregion Process data lines
+
+                    # Complete progress bar
+                    Write-Progress -Activity "Processing DNS log file: $([System.IO.Path]::GetFileName($resolvedPath))" -Completed
+
+                    Write-Verbose "Completed parsing: $lineCount total lines, $parsedCount valid entries"
+                    if ($writeCsvData) {
+                        Write-Verbose "Successfully exported $parsedCount DNS log entries to: '$currentOutputPath'"
+                    }
+                } finally {
+                    if ($null -ne $reader) { $reader.Dispose() }
+                    if ($null -ne $writer) { $writer.Dispose() }
+                }
+                #endregion -- -- Synchronous Processing Mode
+            }
+            #endregion -- Async vs Sync Processing Branch
+
+            # Write statistics files (shared code for both async and sync modes)
+            # Write context statistics file if requested (_Statistic)
+            if ($null -ne $contextStatistics -and $contextStatistics.Count -gt 0) {
+                Write-Verbose "Generating context statistics file with $($contextStatistics.Count) unique groups"
+                $contextStatPath = [System.IO.Path]::Combine(
+                    [System.IO.Path]::GetDirectoryName($currentOutputPath),
+                    [System.IO.Path]::GetFileNameWithoutExtension($currentOutputPath) + '_Statistic' + [System.IO.Path]::GetExtension($currentOutputPath)
+                )
+
+                # Check if we should process (WhatIf support)
+                if ($PSCmdlet.ShouldProcess($contextStatPath, "Create context statistics output file")) {
+                    $statWriter = $null
+                    try {
+                        $statWriter = [System.IO.StreamWriter]::new($contextStatPath, $false, [System.Text.Encoding]::UTF8, 65536)
+
+                        # Write context statistics header
+                        $statWriter.WriteLine('Date' + $Delimiter + 'Context' + $Delimiter + 'Count' + $Delimiter + 'ComputerName')
+
+                        # Write context statistics data (sort by Date, then Context for better readability)
+                        foreach ($kvp in ($contextStatistics.GetEnumerator() | Sort-Object -Property Key)) {
+                            $keyParts = $kvp.Key.Split('|')
+                            # Key format: Date|Context
+                            $statLine = $keyParts[0] + $Delimiter + $keyParts[1] + $Delimiter + $kvp.Value.ToString() + $Delimiter + $computerNameValue
+                            $statWriter.WriteLine($statLine)
+                        }
+
+                        Write-Verbose "Successfully exported context statistics to: '$contextStatPath' ($($contextStatistics.Count) unique groups)"
+                    } finally {
+                        if ($null -ne $statWriter) { $statWriter.Dispose() }
                     }
                 }
-            } finally {
-                if ($null -ne $reader) { $reader.Dispose() }
-                if ($null -ne $writer) { $writer.Dispose() }
+            }
+
+            # Write packet statistics file if requested (_PacketStatistic)
+            if ($null -ne $packetStatistics -and $packetStatistics.Count -gt 0) {
+                Write-Verbose "Generating packet statistics file with $($packetStatistics.Count) unique groups"
+                $packetStatPath = [System.IO.Path]::Combine(
+                    [System.IO.Path]::GetDirectoryName($currentOutputPath),
+                    [System.IO.Path]::GetFileNameWithoutExtension($currentOutputPath) + '_PacketStatistic' + [System.IO.Path]::GetExtension($currentOutputPath)
+                )
+
+                # Check if we should process (WhatIf support)
+                if ($PSCmdlet.ShouldProcess($packetStatPath, "Create packet statistics output file")) {
+                    $statWriter = $null
+                    try {
+                        $statWriter = [System.IO.StreamWriter]::new($packetStatPath, $false, [System.Text.Encoding]::UTF8, 65536)
+
+                        # Write packet statistics header (ComputerName is always included at the end)
+                        $statWriter.WriteLine('Date' + $Delimiter + 'ClientIP' + $Delimiter + 'Protocol' + $Delimiter + 'Direction' + $Delimiter + 'QuestionType' + $Delimiter + 'Count' + $Delimiter + 'ComputerName')
+
+                        # Write packet statistics data (sort by Date, then ClientIP for better readability)
+                        foreach ($kvp in ($packetStatistics.GetEnumerator() | Sort-Object -Property Key)) {
+                            $keyParts = $kvp.Key.Split('|')
+                            # Key format: Date|ClientIP|Protocol|Direction|QuestionType
+                            $statLine = $keyParts[0] + $Delimiter + $keyParts[1] + $Delimiter + $keyParts[2] + $Delimiter + $keyParts[3] + $Delimiter + $keyParts[4] + $Delimiter + $kvp.Value.ToString() + $Delimiter + $computerNameValue
+                            $statWriter.WriteLine($statLine)
+                        }
+
+                        Write-Verbose "Successfully exported packet statistics to: '$packetStatPath' ($($packetStatistics.Count) unique groups)"
+                    } finally {
+                        if ($null -ne $statWriter) { $statWriter.Dispose() }
+                    }
+                }
             }
 
             # Compress output files if requested (process after each file for disk space management)
@@ -1006,6 +1506,32 @@
             $dnsParserStopwatch.Stop()
             Write-Verbose "Processing complete: $fileCount file(s) processed in $($dnsParserStopwatch.Elapsed.ToString())"
         }
+
+        #region -- Async Resource Cleanup
+        # Dispose async infrastructure if it was created
+        if ($useAsyncProcessing) {
+            try {
+                if ($null -ne $runspacePool) {
+                    $runspacePool.Close()
+                    $runspacePool.Dispose()
+                    Write-Verbose "Async RunspacePool disposed"
+                }
+            } catch {
+                Write-Warning "Failed to dispose RunspacePool: $_"
+            }
+
+            try {
+                if ($null -ne $recordQueue) {
+                    $recordQueue.Dispose()
+                }
+                if ($null -ne $outputQueue) {
+                    $outputQueue.Dispose()
+                }
+            } catch {
+                Write-Warning "Failed to dispose BlockingCollections: $_"
+            }
+        }
+        #endregion -- Async Resource Cleanup
         #endregion Completion
     }
 }
