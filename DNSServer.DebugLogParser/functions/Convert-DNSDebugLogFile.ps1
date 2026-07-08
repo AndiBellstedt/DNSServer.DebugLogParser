@@ -296,9 +296,9 @@
         Use when processing very large files and detailed packet structure is not needed.
 
     .NOTES
-        Version  : 1.7.1.1
-        Author   : Andi Bellstedt, Copilot
-        Date     : 2026-01-26
+        Version  : 1.7.2.0
+        Author   : Andi Bellstedt, Copilot, Patrick Charbonnier (Silent Waters IT Consulting S.L.)
+        Date     : 2026-07-08
         Keywords : Microsoft Windows Server, DNSServer, DNS, DebugLog, LogParser
 
     .LINK
@@ -445,6 +445,16 @@
             Field 16: Question Name
         #>
         $headerTemplate = 'DateTime{0}ThreadId{0}Context{0}PacketId{0}Protocol{0}Direction{0}ClientIP{0}Xid{0}Type{0}Opcode{0}FlagsHex{0}FlagsChar{0}ResponseCode{0}QuestionType{0}QuestionName{0}Information{0}Details{0}ComputerName'
+
+        # File stream options for StreamReader/StreamWriter to support UNC paths and files opened by other processes
+        $bufferSize = 65536
+
+        ## Add filestream reader options to support UNC paths and files in opened by other process
+        $fileStreamOptions = [System.IO.FileStreamOptions]::new()
+        $fileStreamOptions.Access = [System.IO.FileAccess]::Read
+        $fileStreamOptions.Share = [System.IO.FileShare]::ReadWrite
+        $fileStreamOptions.BufferSize = $bufferSize
+
         #endregion Initialization
 
         # Start a stopwatch to measure total script runtime and a file counter
@@ -477,8 +487,11 @@
                 continue
             }
 
+            # After confirming the file exists, get the item
+            $CurrentFileItem = Get-Item -Path $currentFile
+
             # Check if input path is a directory
-            if ((Get-Item -Path $currentFile).PSIsContainer) {
+            if ($CurrentFileItem.PSIsContainer) {
                 $errorRecord = [System.Management.Automation.ErrorRecord]::new(
                     [System.ArgumentException]::new("Input path is a directory, not a file: '$currentFile'. Please specify a file path."),
                     'InputPathIsDirectory',
@@ -489,23 +502,20 @@
                 continue
             }
 
-            # Resolve full path
-            $resolvedPath = Resolve-Path -Path $currentFile | Select-Object -ExpandProperty Path
-
             # Validate DNS debug log header (unless validation is skipped)
             if ($SkipHeaderValidation) {
                 # Skip validation - assume standard 30-line header
                 $skipLines = 30
-                Write-Verbose "Header validation skipped for: '$resolvedPath'"
+                Write-Verbose "Header validation skipped for: '$($CurrentFileItem.FullName)'"
             } else {
-                Write-Verbose "Validating DNS debug log header for: '$resolvedPath'"
-                $skipLines = Test-DnsDebugLogHeader -Path $resolvedPath
+                Write-Verbose "Validating DNS debug log header for: '$($CurrentFileItem.FullName)'"
+                $skipLines = Test-DnsDebugLogHeader -Path $CurrentFileItem.FullName
                 if ($skipLines -eq 0) {
                     $errorRecord = [System.Management.Automation.ErrorRecord]::new(
-                        [System.FormatException]::new("File is not a valid DNS Server debug log: '$resolvedPath'. The file header does not match the expected DNS debug log format. Use -SkipHeaderValidation to bypass this check."),
+                        [System.FormatException]::new("File is not a valid DNS Server debug log: '$($CurrentFileItem.FullName)'. The file header does not match the expected DNS debug log format. Use -SkipHeaderValidation to bypass this check."),
                         'InvalidDnsLogHeader',
                         [System.Management.Automation.ErrorCategory]::InvalidData,
-                        $resolvedPath
+                        $CurrentFileItem.FullName
                     )
                     $PSCmdlet.WriteError($errorRecord)
                     continue
@@ -516,7 +526,7 @@
             # Calculate output path for this input file
             # If user didn't explicitly provide OutputFile, derive from input file
             if (-not $explicitOutputFile) {
-                $currentOutputPath = [System.IO.Path]::ChangeExtension($resolvedPath, '.csv')
+                $currentOutputPath = [System.IO.Path]::ChangeExtension($CurrentFileItem.FullName, '.csv')
             } else {
                 # Use the explicitly provided OutputFile (resolved to absolute)
                 if (-not [System.IO.Path]::IsPathRooted($OutputFile)) {
@@ -526,7 +536,7 @@
                 }
             }
 
-            Write-Verbose "Starting processing: '$resolvedPath' (Input culture for date parsing: $($InputCulture.Name) [$($InputCulture.DisplayName)])"
+            Write-Verbose "Starting processing: '$($CurrentFileItem.FullName)' (Input culture for date parsing: $($InputCulture.Name) [$($InputCulture.DisplayName)])"
             Write-Verbose "Output type: $($OutputType) | CSV delimiter: '$Delimiter'"
             Write-Verbose "Output path: '$currentOutputPath' (Output culture for date formatting: $($OutputCulture.Name) [$($OutputCulture.DisplayName)])"
 
@@ -558,14 +568,15 @@
             $outputDateTimeFormat = $OutputCulture.DateTimeFormat.ShortDatePattern + ' ' + $OutputCulture.DateTimeFormat.LongTimePattern
 
             try {
-                $reader = [System.IO.StreamReader]::new($resolvedPath, [System.Text.Encoding]::UTF8, $true, 65536)
+                $reader = [System.IO.StreamReader]::new($CurrentFileItem.FullName, [System.Text.Encoding]::UTF8, $true, $fileStreamOptions)
 
                 # Only create CSV writer if we're outputting CSV data
                 if ($writeCsvData) {
                     # Check if we should process (WhatIf support)
                     if ($PSCmdlet.ShouldProcess($currentOutputPath, "Create CSV output file")) {
                         Write-Verbose "Initializing CSV writer for: '$currentOutputPath'"
-                        $writer = [System.IO.StreamWriter]::new($currentOutputPath, $false, [System.Text.Encoding]::UTF8, 65536)
+                        $writer = [System.IO.StreamWriter]::new($currentOutputPath, $false, [System.Text.Encoding]::UTF8, $bufferSize)
+
                         # Write CSV header
                         $writer.WriteLine($header)
                     } else {
@@ -805,7 +816,7 @@
 
                     # Update progress every 1000 records for performance efficiency
                     if ($progressCounter -ge $progressUpdateInterval) {
-                        Write-Progress -Activity "Processing DNS log file: $([System.IO.Path]::GetFileName($resolvedPath))" -Status "Parsed $parsedCount records ($lineCount lines read)" -PercentComplete -1
+                        Write-Progress -Activity "Processing DNS log file: $([System.IO.Path]::GetFileName($CurrentFileItem.FullName))" -Status "Parsed $parsedCount records ($lineCount lines read)" -PercentComplete -1
                         $progressCounter = 0
                     }
 
@@ -838,7 +849,7 @@
                 #endregion Process data lines
 
                 # Complete progress bar
-                Write-Progress -Activity "Processing DNS log file: $([System.IO.Path]::GetFileName($resolvedPath))" -Completed
+                Write-Progress -Activity "Processing DNS log file: $([System.IO.Path]::GetFileName($CurrentFileItem.FullName))" -Completed
 
                 Write-Verbose "Completed parsing: $lineCount total lines, $parsedCount valid entries"
                 if ($writeCsvData) {
@@ -977,17 +988,17 @@
             # Remove source file if requested (only after successful processing)
             if ($RemoveSourceFile) {
                 # Check if we should process (WhatIf support)
-                if ($PSCmdlet.ShouldProcess($resolvedPath, "Remove source file")) {
+                if ($PSCmdlet.ShouldProcess($CurrentFileItem.FullName, "Remove source file")) {
                     try {
-                        Write-Verbose "Removing source file: '$resolvedPath'"
-                        Remove-Item -Path $resolvedPath -Force -ErrorAction Stop
-                        Write-Verbose "Successfully removed source file: '$resolvedPath'"
+                        Write-Verbose "Removing source file: '$($CurrentFileItem.FullName)'"
+                        Remove-Item -Path $CurrentFileItem.FullName -Force -ErrorAction Stop
+                        Write-Verbose "Successfully removed source file: '$($CurrentFileItem.FullName)'"
                     } catch {
                         $errorRecord = [System.Management.Automation.ErrorRecord]::new(
-                            [System.IO.IOException]::new("Failed to remove source file '$resolvedPath': $_"),
+                            [System.IO.IOException]::new("Failed to remove source file '$($CurrentFileItem.FullName)': $_"),
                             'SourceFileRemovalFailed',
                             [System.Management.Automation.ErrorCategory]::WriteError,
-                            $resolvedPath
+                            $CurrentFileItem.FullName
                         )
                         $PSCmdlet.WriteError($errorRecord)
                     }
