@@ -450,10 +450,10 @@
         $bufferSize = 65536
 
         ## Add filestream reader options to support UNC paths and files in opened by other process
-        $FileStreamOptions = [System.IO.FileStreamOptions]::new()
-        $FileStreamOptions.Access = [System.IO.FileAccess]::Read
-        $FileStreamOptions.Share = [System.IO.FileShare]::ReadWrite
-        $FileStreamOptions.BufferSize = $bufferSize
+        $fileStreamOptions = [System.IO.FileStreamOptions]::new()
+        $fileStreamOptions.Access = [System.IO.FileAccess]::Read
+        $fileStreamOptions.Share = [System.IO.FileShare]::ReadWrite
+        $fileStreamOptions.BufferSize = $bufferSize
 
         #endregion Initialization
 
@@ -568,7 +568,7 @@
             $outputDateTimeFormat = $OutputCulture.DateTimeFormat.ShortDatePattern + ' ' + $OutputCulture.DateTimeFormat.LongTimePattern
 
             try {
-                $reader = [System.IO.StreamReader]::new($CurrentFileItem.FullName, [System.Text.Encoding]::UTF8, $true, $FileStreamOptions)
+                $reader = [System.IO.StreamReader]::new($CurrentFileItem.FullName, [System.Text.Encoding]::UTF8, $true, $fileStreamOptions)
 
                 # Only create CSV writer if we're outputting CSV data
                 if ($writeCsvData) {
