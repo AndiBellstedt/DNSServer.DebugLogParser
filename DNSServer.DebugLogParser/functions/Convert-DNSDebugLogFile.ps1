@@ -1,5 +1,4 @@
-﻿
-function Convert-DNSDebugLogFile {
+﻿function Convert-DNSDebugLogFile {
     <#
     .SYNOPSIS
         Transforms Windows DNS Server debug logs into structured CSV format for analysis and reporting.
@@ -297,9 +296,9 @@ function Convert-DNSDebugLogFile {
         Use when processing very large files and detailed packet structure is not needed.
 
     .NOTES
-        Version  : 1.7.1.2
+        Version  : 1.7.2.0
         Author   : Andi Bellstedt, Copilot, Patrick Charbonnier (Silent Waters IT Consulting S.L.)
-        Date     : 2026-06-07
+        Date     : 2026-07-08
         Keywords : Microsoft Windows Server, DNSServer, DNS, DebugLog, LogParser
 
     .LINK
@@ -410,8 +409,7 @@ function Convert-DNSDebugLogFile {
             # Resolve to absolute path for validation
             if (-not [System.IO.Path]::IsPathRooted($OutputFile)) {
                 $resolvedOutputFile = Join-Path -Path (Get-Location).Path -ChildPath $OutputFile
-            } 
-            else {
+            } else {
                 $resolvedOutputFile = $OutputFile
             }
 
@@ -447,6 +445,16 @@ function Convert-DNSDebugLogFile {
             Field 16: Question Name
         #>
         $headerTemplate = 'DateTime{0}ThreadId{0}Context{0}PacketId{0}Protocol{0}Direction{0}ClientIP{0}Xid{0}Type{0}Opcode{0}FlagsHex{0}FlagsChar{0}ResponseCode{0}QuestionType{0}QuestionName{0}Information{0}Details{0}ComputerName'
+
+        # File stream options for StreamReader/StreamWriter to support UNC paths and files opened by other processes
+        $bufferSize = 65536
+
+        ## Add filestream reader options to support UNC paths and files in opened by other process
+        $FileStreamOptions = [System.IO.FileStreamOptions]::new()
+        $FileStreamOptions.Access = [System.IO.FileAccess]::Read
+        $FileStreamOptions.Share = [System.IO.FileShare]::ReadWrite
+        $FileStreamOptions.BufferSize = $bufferSize
+
         #endregion Initialization
 
         # Start a stopwatch to measure total script runtime and a file counter
@@ -463,7 +471,7 @@ function Convert-DNSDebugLogFile {
 
     process {
         #region File Processing
-        :fileProcessing foreach ($currentFile in $InputFile) {
+        foreach ($currentFile in $InputFile) {
             # Reset progress counter for each file to ensure consistent progress update intervals
             $progressCounter = 0
 
@@ -476,11 +484,13 @@ function Convert-DNSDebugLogFile {
                     $currentFile
                 )
                 $PSCmdlet.WriteError($errorRecord)
-                continue fileProcessing
+                continue
             }
 
-            # Check if input path is a directory
+            # After confirming the file exists, get the item
             $CurrentFileItem = Get-Item -Path $currentFile
+
+            # Check if input path is a directory
             if ($CurrentFileItem.PSIsContainer) {
                 $errorRecord = [System.Management.Automation.ErrorRecord]::new(
                     [System.ArgumentException]::new("Input path is a directory, not a file: '$currentFile'. Please specify a file path."),
@@ -489,7 +499,7 @@ function Convert-DNSDebugLogFile {
                     $currentFile
                 )
                 $PSCmdlet.WriteError($errorRecord)
-                continue fileProcessing
+                continue
             }
 
             # Validate DNS debug log header (unless validation is skipped)
@@ -497,8 +507,7 @@ function Convert-DNSDebugLogFile {
                 # Skip validation - assume standard 30-line header
                 $skipLines = 30
                 Write-Verbose "Header validation skipped for: '$($CurrentFileItem.FullName)'"
-            } 
-            else {
+            } else {
                 Write-Verbose "Validating DNS debug log header for: '$($CurrentFileItem.FullName)'"
                 $skipLines = Test-DnsDebugLogHeader -Path $CurrentFileItem.FullName
                 if ($skipLines -eq 0) {
@@ -509,7 +518,7 @@ function Convert-DNSDebugLogFile {
                         $CurrentFileItem.FullName
                     )
                     $PSCmdlet.WriteError($errorRecord)
-                    continue fileProcessing
+                    continue
                 }
                 Write-Verbose "Header validation successful ($skipLines header lines)"
             }
@@ -518,13 +527,11 @@ function Convert-DNSDebugLogFile {
             # If user didn't explicitly provide OutputFile, derive from input file
             if (-not $explicitOutputFile) {
                 $currentOutputPath = [System.IO.Path]::ChangeExtension($CurrentFileItem.FullName, '.csv')
-            } 
-            else {
+            } else {
                 # Use the explicitly provided OutputFile (resolved to absolute)
                 if (-not [System.IO.Path]::IsPathRooted($OutputFile)) {
                     $currentOutputPath = Join-Path -Path (Get-Location).Path -ChildPath $OutputFile
-                } 
-                else {
+                } else {
                     $currentOutputPath = $OutputFile
                 }
             }
@@ -561,28 +568,18 @@ function Convert-DNSDebugLogFile {
             $outputDateTimeFormat = $OutputCulture.DateTimeFormat.ShortDatePattern + ' ' + $OutputCulture.DateTimeFormat.LongTimePattern
 
             try {
-                ## Add filestream reader options to support UNC paths and files in opened by other process
-                $FileStreamOptions = [System.IO.FileStreamOptions]::new()
-                $FileStreamOptions.Access = [System.IO.FileAccess]::Read
-                $FileStreamOptions.Share = [System.IO.FileShare]::ReadWrite
-                
-                #$reader = [System.IO.StreamReader]::new($CurrentFileItem.FullName, [System.Text.Encoding]::UTF8, $true, 65536)
-                $reader = [System.IO.StreamReader]::new(
-                    $CurrentFileItem.FullName
-                    , [System.Text.Encoding]::UTF8
-                    , $true
-                    , $FileStreamOptions
-                )
+                $reader = [System.IO.StreamReader]::new($CurrentFileItem.FullName, [System.Text.Encoding]::UTF8, $true, $FileStreamOptions)
+
                 # Only create CSV writer if we're outputting CSV data
                 if ($writeCsvData) {
                     # Check if we should process (WhatIf support)
                     if ($PSCmdlet.ShouldProcess($currentOutputPath, "Create CSV output file")) {
                         Write-Verbose "Initializing CSV writer for: '$currentOutputPath'"
-                        $writer = [System.IO.StreamWriter]::new($currentOutputPath, $false, [System.Text.Encoding]::UTF8, 65536)
+                        $writer = [System.IO.StreamWriter]::new($currentOutputPath, $false, [System.Text.Encoding]::UTF8, $bufferSize)
+
                         # Write CSV header
                         $writer.WriteLine($header)
-                    } 
-                    else {
+                    } else {
                         # In WhatIf mode, don't create writer
                         $writeCsvData = $false
                     }
@@ -698,8 +695,7 @@ function Convert-DNSDebugLogFile {
                                 if ($detailLineList.Count -gt 0 -and -not $NoDetailsParsing) {
                                     $details = ConvertTo-PacketDetailJson -DetailLines $detailLineList
                                 }
-                            } 
-                            elseif ([string]::IsNullOrWhiteSpace($nextLine)) {
+                            } elseif ([string]::IsNullOrWhiteSpace($nextLine)) {
                                 # Empty line after PACKET without details - skip it
                                 $null = $lookaheadBuffer.Dequeue()
                                 if (-not $reader.EndOfStream) {
@@ -709,8 +705,7 @@ function Convert-DNSDebugLogFile {
                             }
                             # Otherwise, nextLine is a new record - don't consume it
                         }
-                    } 
-                    else {
+                    } else {
                         # Non-PACKET context: Collect continuation lines (indented lines) into Information
                         # Continuation lines start with whitespace and are appended to the main line's information
                         $continuationTextList = [System.Collections.Generic.List[string]]::new()
@@ -741,8 +736,7 @@ function Convert-DNSDebugLogFile {
                                     $lookaheadBuffer.Enqueue($reader.ReadLine())
                                     $lineCount++
                                 }
-                            } 
-                            else {
+                            } else {
                                 # New record detected - don't consume this line
                                 break
                             }
@@ -752,8 +746,7 @@ function Convert-DNSDebugLogFile {
                         if ($continuationTextList.Count -gt 0) {
                             if ([string]::IsNullOrEmpty($information)) {
                                 $information = [string]::Join(' ', $continuationTextList)
-                            } 
-                            else {
+                            } else {
                                 $information = $information + ' ' + [string]::Join(' ', $continuationTextList)
                             }
                         }
@@ -836,8 +829,7 @@ function Convert-DNSDebugLogFile {
                         $contextKey = $dateOnly + '|' + $parsed.Context
                         if ($contextStatistics.ContainsKey($contextKey)) {
                             $contextStatistics[$contextKey]++
-                        } 
-                        else {
+                        } else {
                             $contextStatistics[$contextKey] = 1
                         }
 
@@ -847,8 +839,7 @@ function Convert-DNSDebugLogFile {
                             $packetKey = $dateOnly + '|' + $parsed.RemoteIP + '|' + $parsed.Protocol + '|' + $parsed.Direction + '|' + $parsed.QuestionType
                             if ($packetStatistics.ContainsKey($packetKey)) {
                                 $packetStatistics[$packetKey]++
-                            } 
-                            else {
+                            } else {
                                 $packetStatistics[$packetKey] = 1
                             }
                         }
@@ -891,8 +882,7 @@ function Convert-DNSDebugLogFile {
                             }
 
                             Write-Verbose "Successfully exported context statistics to: '$contextStatPath' ($($contextStatistics.Count) unique groups)"
-                        } 
-                        finally {
+                        } finally {
                             if ($null -ne $statWriter) { $statWriter.Dispose() }
                         }
                     }
@@ -929,8 +919,7 @@ function Convert-DNSDebugLogFile {
                         }
                     }
                 }
-            } 
-            finally {
+            } finally {
                 if ($null -ne $reader) { $reader.Dispose() }
                 if ($null -ne $writer) { $writer.Dispose() }
             }
