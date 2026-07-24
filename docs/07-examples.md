@@ -23,7 +23,7 @@ Convert-DNSDebugLogFile -InputFile "C:\Logs\dns.log" `
 
 ## Example 3: Generate statistics
 
-Use the `-OutputType Both` parameter to generate both the detailed CSV log and a summary statistics file. The statistics file includes counts of query types, response codes, and other high-level metrics.
+Use the `-OutputType Both` parameter to generate the detailed CSV log and two statistics files: context counts by date and detailed PACKET counts by date, client IP, protocol, direction, and question type.
 
 ```powershell
 Convert-DNSDebugLogFile -InputFile "C:\Logs\dns.log" `
