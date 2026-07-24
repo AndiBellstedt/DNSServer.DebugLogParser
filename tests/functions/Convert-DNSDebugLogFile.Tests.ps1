@@ -378,3 +378,64 @@ Describe "Convert-DNSDebugLogFile - Parameter Contract" {
         }
     }
 }
+
+Describe "Convert-DNSDebugLogFile - Functional Behavior" {
+    BeforeAll {
+        $exampleDataPath = (Resolve-Path "$moduleRoot\..\assets\ExampleData").Path
+        $expectedCsvHeader = "DateTime;ThreadId;Context;PacketId;Protocol;Direction;ClientIP;Xid;Type;Opcode;FlagsHex;FlagsChar;ResponseCode;QuestionType;QuestionName;Information;Details;ComputerName"
+    }
+
+    It "Converts the <Name> example log into CSV" -ForEach @(
+        @{
+            Name         = "en-US"
+            FileName     = "en-us - dnsdebug-dc01.log"
+            InputCulture = [System.Globalization.CultureInfo]::GetCultureInfo("en-US")
+        },
+        @{
+            Name         = "de-DE"
+            FileName     = "de-de - dnsdebug-dc01.log"
+            InputCulture = [System.Globalization.CultureInfo]::GetCultureInfo("de-DE")
+        }
+    ) {
+        param(
+            $Name,
+            $FileName,
+            $InputCulture
+        )
+
+        $inputPath = Join-Path -Path $TestDrive -ChildPath "$($Name).log"
+        $outputPath = Join-Path -Path $TestDrive -ChildPath "$($Name).csv"
+        $sourcePath = Join-Path -Path $exampleDataPath -ChildPath $FileName
+
+        Copy-Item -LiteralPath $sourcePath -Destination $inputPath
+        Convert-DNSDebugLogFile -InputFile $inputPath -OutputFile $outputPath -OutputType CSV -InputCulture $InputCulture -OutputCulture ([System.Globalization.CultureInfo]::InvariantCulture) -NoDetailsParsing
+
+        $outputPath | Should -Exist
+        $csvLineList = Get-Content -LiteralPath $outputPath
+        $csvLineList.Count | Should -BeGreaterThan 1
+        $csvLineList[0] | Should -Be $expectedCsvHeader
+    }
+
+    It "Converts an example log while another process holds it open for writing" {
+        $inputPath = Join-Path -Path $TestDrive -ChildPath "open-log.log"
+        $outputPath = Join-Path -Path $TestDrive -ChildPath "open-log.csv"
+        $sourcePath = Join-Path -Path $exampleDataPath -ChildPath "en-us - dnsdebug-dc01.log"
+
+        Copy-Item -LiteralPath $sourcePath -Destination $inputPath
+        $fileLock = [System.IO.FileStream]::new(
+            $inputPath,
+            [System.IO.FileMode]::Open,
+            [System.IO.FileAccess]::ReadWrite,
+            [System.IO.FileShare]::Read
+        )
+
+        try {
+            Convert-DNSDebugLogFile -InputFile $inputPath -OutputFile $outputPath -OutputType CSV -InputCulture "en-US" -OutputCulture ([System.Globalization.CultureInfo]::InvariantCulture) -NoDetailsParsing
+        } finally {
+            $fileLock.Dispose()
+        }
+
+        $outputPath | Should -Exist
+        (Get-Content -LiteralPath $outputPath).Count | Should -BeGreaterThan 1
+    }
+}
