@@ -23,6 +23,8 @@ DNSServer.DebugLogParser transforms Windows DNS Server debug logs into structure
 - Optional automatic compression of output files to save disk space
 - Optional removal of source files after successful processing
 - Validates log file headers to ensure data integrity
+- Supports local and SMB/UNC source paths
+- Can read logs open by DNS Server or another process; active logs must be handled with care
 
 ## Documentation
 
@@ -76,6 +78,9 @@ Convert-DNSDebugLogFile -InputFile "C:\Windows\System32\dns\dns.log"
 # - C:\Windows\System32\dns\dns_PacketStatistic.csv
 ```
 
+> [!WARNING]
+> The module can read an active log file, but this must be handled with care. The file can change during conversion, so output may omit the newest records or contain an incomplete final record. Prefer rotated, closed logs for scheduled or production processing.
+
 #### Generate Statistics
 
 Create aggregated statistics showing DNS activity patterns:
@@ -127,6 +132,19 @@ Convert-DNSDebugLogFile -InputFile "C:\Logs\dns01.log" `
 # Useful for combining data from multiple servers in a single database or dashboard
 ```
 
+#### SMB/UNC Source Paths
+
+Source logs stored on trusted SMB/UNC shares can be processed directly. Ensure the account running PowerShell or a scheduled task has read permission to the share.
+
+```powershell
+Convert-DNSDebugLogFile -InputFile "\\DNSServer01\C$\Windows\System32\dns\dns.log" `
+    -ComputerName "DNSServer01" `
+    -OutputFile "C:\Analysis\DNS01-dns.csv"
+```
+
+> [!WARNING]
+> Treat network-share input as untrusted until its source and access controls have been verified. If the source log is active, handle it with care and do not use `-RemoveSourceFile`.
+
 #### Batch Processing via Pipeline
 
 Process multiple DNS debug log files efficiently using PowerShell pipelines:
@@ -176,6 +194,7 @@ Convert-DNSDebugLogFile -InputFile "C:\Logs\dns.log" `
 
 # Output: CSV created, then source dns.log permanently deleted
 # Warning: Source files are permanently deleted. Ensure output is valid first!
+# Never use -RemoveSourceFile with a log that DNS Server is still writing to.
 
 # Full automated pipeline: process, compress, and cleanup
 Get-ChildItem "C:\Logs\*.log" |
@@ -474,6 +493,10 @@ Convert-DNSDebugLogFile -InputFile "C:\Logs\dns.log" -Delimiter ","
 
 A: Yes! The module only requires the log file, not a running DNS server. Copy log files to any Windows machine with PowerShell and process them there.
 
+**Q: Can I process a DNS log that is still open by DNS Server?**
+
+A: Yes, but it must be handled with care. The file can change during conversion, so the output may omit the newest records or contain an incomplete final record. Prefer rotated, closed logs when you need a complete, repeatable result. Never use `-RemoveSourceFile` with an active log.
+
 **Q: How much disk space do I need for the CSV output?**
 
 A: CSV files are typically 2-3x larger than the original log file. A 100MB log file will produce approximately 200-300MB CSV. Use `-CompressOutput` to reduce storage by 80-90%.
@@ -533,7 +556,7 @@ Convert-DNSDebugLogFile -InputFile "C:\Logs\dns.log" -OutputCulture ([System.Glo
 
 **Issue: "Access denied" errors**
 
-**Solution:** Run PowerShell as Administrator, or copy log files to a location where you have write permissions.
+**Solution:** Run PowerShell with permission to read the source log and write to the destination directory. For SMB/UNC paths, confirm that the user or scheduled-task account has access to the network share.
 
 **Issue: Processing is very slow**
 
