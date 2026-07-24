@@ -296,9 +296,9 @@
         Use when processing very large files and detailed packet structure is not needed.
 
     .NOTES
-        Version  : 1.7.2.0
+        Version  : 1.7.2.1
         Author   : Andi Bellstedt, Copilot, Patrick Charbonnier (Silent Waters IT Consulting S.L.)
-        Date     : 2026-07-08
+        Date     : 2026-07-24
         Keywords : Microsoft Windows Server, DNSServer, DNS, DebugLog, LogParser
 
     .LINK
@@ -446,14 +446,8 @@
         #>
         $headerTemplate = 'DateTime{0}ThreadId{0}Context{0}PacketId{0}Protocol{0}Direction{0}ClientIP{0}Xid{0}Type{0}Opcode{0}FlagsHex{0}FlagsChar{0}ResponseCode{0}QuestionType{0}QuestionName{0}Information{0}Details{0}ComputerName'
 
-        # File stream options for StreamReader/StreamWriter to support UNC paths and files opened by other processes
+        # Use a 64KB buffer while allowing reads from files that another process has open for writing.
         $bufferSize = 65536
-
-        ## Add filestream reader options to support UNC paths and files in opened by other process
-        $fileStreamOptions = [System.IO.FileStreamOptions]::new()
-        $fileStreamOptions.Access = [System.IO.FileAccess]::Read
-        $fileStreamOptions.Share = [System.IO.FileShare]::ReadWrite
-        $fileStreamOptions.BufferSize = $bufferSize
 
         #endregion Initialization
 
@@ -546,6 +540,7 @@
 
             # Use StreamReader for maximum performance with large files
             $reader = $null
+            $readerStream = $null
             $writer = $null
             $lineCount = 0
             $parsedCount = 0
@@ -568,7 +563,14 @@
             $outputDateTimeFormat = $OutputCulture.DateTimeFormat.ShortDatePattern + ' ' + $OutputCulture.DateTimeFormat.LongTimePattern
 
             try {
-                $reader = [System.IO.StreamReader]::new($CurrentFileItem.FullName, [System.Text.Encoding]::UTF8, $true, $fileStreamOptions)
+                $readerStream = [System.IO.FileStream]::new(
+                    $CurrentFileItem.FullName,
+                    [System.IO.FileMode]::Open,
+                    [System.IO.FileAccess]::Read,
+                    [System.IO.FileShare]::ReadWrite,
+                    $bufferSize
+                )
+                $reader = [System.IO.StreamReader]::new($readerStream, [System.Text.Encoding]::UTF8, $true, $bufferSize)
 
                 # Only create CSV writer if we're outputting CSV data
                 if ($writeCsvData) {
