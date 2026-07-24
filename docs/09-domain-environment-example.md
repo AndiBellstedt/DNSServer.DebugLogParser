@@ -107,7 +107,7 @@ Get-ChildItem .\*.log |
 
 Design notes:
 
-- `Select-Object -Skip 1` intentionally avoids processing the newest (active) log file.
+- `Select-Object -Skip 1` intentionally avoids processing the newest (active) log file. The module can read an active log, but this must be handled with care because the file can change during conversion and the final record may be incomplete.
 - Because `Convert-DNSDebugLogFile` defaults `-OutputFile` to “same folder, same name, `.csv`”, outputs land next to the `*.log` inputs.
 - With `-CompressOutput`, each processed log produces a `*.zip` (and the intermediate CSVs are removed).
 - The task throws if `$Error.Count -gt 0` to signal a failed run.
@@ -127,6 +127,7 @@ Options (pick one):
 - Disk usage: `-CompressOutput` helps significantly, but this workflow does not remove source logs; plan retention and cleanup.
 - Re-processing behavior: the conversion task processes “all but newest” `*.log` each day; this is simple and robust, but may reprocess old logs repeatedly.
 - Multi-DC consolidation: `-ComputerName $env:COMPUTERNAME` is included so consolidated datasets remain traceable.
+- Network shares: the module supports SMB/UNC paths, but local conversion remains preferred for large raw logs. Ensure the task identity has the required network-share permissions when using a UNC path.
 - Validation: header validation remains enabled by default (recommended).
 
 ## Validate and adapt (using the ZIP)

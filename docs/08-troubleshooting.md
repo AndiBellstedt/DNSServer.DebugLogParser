@@ -15,6 +15,7 @@
 - Confirm the input file contains valid log entries.
 - Some logs may only contain header information if no queries occurred.
 - Verify the log file isn’t corrupted and contains actual query data.
+- If the source log is still active, it can change during conversion and its final record may be incomplete. Handle active logs with care; prefer a rotated, closed log when complete output is required.
 
 ### Processing is very slow
 
@@ -26,6 +27,7 @@
 
 - Run PowerShell with appropriate permissions to read the source log files and write to the destination directory.
 - DNS log files may require administrator access.
+- For SMB/UNC paths, verify that the account running PowerShell or the scheduled task has permission to access the network share.
 
 ### Compressed output is larger than expected
 

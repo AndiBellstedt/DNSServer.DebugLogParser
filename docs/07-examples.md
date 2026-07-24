@@ -32,7 +32,7 @@ Convert-DNSDebugLogFile -InputFile "C:\Logs\dns.log" `
 
 ## Example 4: Multi-server log consolidation
 
-This example demonstrates how to process logs from multiple servers via network shares. The `-ComputerName` parameter adds a column to the output, allowing you to identify which server generated the log entries when merging data later.
+This example demonstrates how to process logs from multiple servers via SMB/UNC network shares. The `-ComputerName` parameter adds a column to the output, allowing you to identify which server generated the log entries when merging data later.
 
 ```powershell
 Get-ChildItem "\\DNSServer01\C$\DNS\dns*.log" |
@@ -41,6 +41,8 @@ Get-ChildItem "\\DNSServer01\C$\DNS\dns*.log" |
 Get-ChildItem "\\DNSServer02\C$\DNS\dns*.log" |
     Convert-DNSDebugLogFile -ComputerName "DNSServer02" -OutputType Both
 ```
+
+The module supports SMB/UNC source paths. Ensure the account running the command has access to the share. If the newest file is still open and being written by DNS Server, handle it with care; prefer a rotated, closed log when a complete snapshot is required.
 
 ## Example 5: Batch processing with pipeline
 

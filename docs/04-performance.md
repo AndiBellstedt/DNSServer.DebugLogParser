@@ -16,5 +16,6 @@ DNSServer.DebugLogParser is optimized for processing large DNS debug logs (teste
 ## Practical guidance
 
 - Prefer processing rotated logs (for example 50–200MB chunks) to keep run times predictable.
+- The module can read a log that is still open, but this must be handled with care: the file can change during conversion. Prefer rotated, closed logs when complete, repeatable output is required.
 - Use `-NoDetailsParsing` when you don’t need packet-detail JSON and want maximum throughput.
 - Consider `-CompressOutput` for long-term storage; CSV usually compresses very well.

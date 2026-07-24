@@ -72,6 +72,11 @@ Key capabilities:
 - Can automatically remove source files after successful processing
 - Culture-aware date parsing for international DNS server logs
 - Culture-aware date formatting for international output requirements
+- Supports source logs stored on SMB/UNC paths
+- Can read logs that are open by another process, including the DNS Server
+
+> [!WARNING]
+> Reading an active log file must be handled with care. The log can change while conversion is in progress, so output may omit the newest records or contain an incomplete final record. Prefer rotated, closed logs for scheduled or production processing.
 
 ## Licensing and support
 

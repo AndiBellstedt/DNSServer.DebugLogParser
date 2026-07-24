@@ -83,6 +83,13 @@ LONG DESCRIPTION
     - Can automatically remove source files after successful processing
     - Culture-aware date parsing for international DNS server logs
     - Culture-aware date formatting for international output requirements
+    - Reads source logs stored on SMB/UNC paths
+    - Can read logs that are open by another process, including the DNS Server
+
+    Important: Reading an active log file must be handled with care. The file
+    can change while it is being processed, so the output may not contain the
+    most recent records or may include an incomplete final record. Prefer
+    rotated, closed log files for scheduled or production processing.
 
   Output Formats
 
@@ -156,6 +163,12 @@ LONG DESCRIPTION
     ComputerName
     Add a ComputerName column to the output, useful when consolidating logs
     from multiple DNS servers into a single dataset for centralized analysis.
+
+    Input files
+    The module supports local paths and SMB/UNC paths. It can also read a log
+    file that is open by the DNS Server or another process. Handle active logs
+    with care: their content can change during conversion. Prefer processing
+    rotated, closed logs and do not use source-file removal for an active log.
 
     Output Type
     Choose to generate:
@@ -446,7 +459,10 @@ TROUBLESHOOTING
     Issue: Output file is empty or incomplete
     Solution: Check that the input file contains valid log entries. Some DNS
     logs may only contain header information if no queries occurred. Verify
-    the log file isn't corrupted and contains actual query data.
+    the log file isn't corrupted and contains actual query data. If the source
+    log is active, it can change during conversion and the final record may be
+    incomplete. Prefer a rotated, closed log file when complete output is
+    required.
 
     Issue: Processing is very slow
     Solution: Ensure you have sufficient memory and the disk isn't heavily
@@ -456,7 +472,8 @@ TROUBLESHOOTING
     Issue: "Access denied" errors
     Solution: Run PowerShell with appropriate permissions to read the source
     log files and write to the destination directory. DNS log files may
-    require administrator access.
+    require administrator access. For SMB/UNC paths, also verify that the
+    current account has permission to access the network share.
 
     Issue: Compressed output is larger than expected
     Solution: DNS logs with many unique values compress less efficiently.

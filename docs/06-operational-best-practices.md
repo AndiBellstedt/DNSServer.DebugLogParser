@@ -9,6 +9,7 @@ When using DNSServer.DebugLogParser in production:
 
 2. Rotate logs appropriately
    - DNS debug logs can grow quickly; configure rotation at a manageable size (for example 100MB).
+   - Prefer converting rotated, closed logs. The module can read an active log, but this must be handled with care because records can be written while conversion is in progress.
 
 3. Validate output
    - Verify the first few converted files before fully automating.
@@ -27,3 +28,4 @@ When using DNSServer.DebugLogParser in production:
 
 8. Monitor for errors
    - Watch for corrupted logs, access issues, or insufficient disk space.
+   - For UNC paths, confirm that the task identity has access to the network share.

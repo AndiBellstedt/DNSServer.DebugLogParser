@@ -18,6 +18,13 @@ Change the CSV delimiter from the default semicolon (`;`) to comma, tab, or any 
 
 Adds a `ComputerName` column to the output, useful when consolidating logs from multiple DNS servers into a single dataset.
 
+## Input files
+
+The module supports local paths and SMB/UNC paths. It can also read a log that is open by the DNS Server or another process.
+
+> [!WARNING]
+> Handle active logs with care: their content can change during conversion, which can leave the final record incomplete or omit records written after the file is read. Prefer rotated, closed logs and do not use source-file removal for an active log.
+
 ## OutputType
 
 Choose to generate:
