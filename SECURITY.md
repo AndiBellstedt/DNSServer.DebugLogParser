@@ -114,8 +114,13 @@ DNSServer.DebugLogParser performs file operations on DNS Server debug logs, whic
   - Output CSV files containing parsed query data
   - Temporary files during processing
   - Compressed archives when using `-CompressOutput`
-- Do not process DNS logs from untrusted sources or network shares without proper validation.
-- When using `-RemoveSourceFile`, ensure you have proper authorization and backups, as this permanently deletes source files.
+- The module supports SMB/UNC source paths. Only process logs from trusted network shares after verifying the source, share access controls, and read permissions for the account running the command or scheduled task.
+- When using `-RemoveSourceFile`, ensure you have proper authorization and backups, as this permanently deletes source files. Never use it with a log that DNS Server or another process is still writing to.
+
+### Active Log Files
+- The module can read a log file that is open by DNS Server or another process.
+- Active logs must be handled with care: the file can change during conversion, so output can omit the newest records or contain an incomplete final record.
+- Prefer rotated, closed logs for scheduled, archival, or forensic processing that requires a complete and repeatable snapshot.
 
 ### Path Handling and Traversal
 - Input file paths and output file paths can be user-controlled or come from external sources.

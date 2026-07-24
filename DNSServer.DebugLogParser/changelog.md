@@ -1,5 +1,23 @@
 ﻿# Changelog
 
+## 1.2.2.0 (2026-07-24)
+
+### Added
+* **NEW**: Support for reading DNS Server debug log files that are currently open by the DNS service
+  * Enables processing of active log files without requiring the file to be closed first
+  * Improves compatibility with logs that are still being written or held open by another process
+  * **Be cautious** when processing live logs, as records may be incomplete or in flux
+* **NEW**: Support for SMB/UNC paths when reading source log files
+  * Allows the parser to work with files stored on network shares and remote locations
+  * Improves reliability in centralized or shared storage environments
+
+### Changed
+* **Module metadata**: Updated ProjectUri and ReleaseNotes to point to the **official website https://dnsserverdebuglogparser.andibellstedt.com** for better discoverability and documentation access
+* **Fixed File access**: Updated the underlying file opening logic to use stream-based access with explicit options for shared read scenarios
+  * Improves handling of live log files and alternate path types such as UNC shares
+  * Maintains consistent behavior for local and remote file sources
+
+
 ## 1.2.1.0 (2026-01-26)
 
 ### Changed
@@ -10,6 +28,7 @@
 * **Progress**: Added `Write-Progress` for processing feedback
   * Progress bar updates every 1000 records for minimal performance impact
   * Displays current record count and file being processed
+
 
 ## 1.2.0.0 (2026-01-25)
 
@@ -68,6 +87,7 @@
 * The new `Details` column is always present in CSV output; use `NoDetailsParsing` to keep it empty for performance
 * Existing scripts that parse CSV by column position need to account for the new `Details` column (position 17, before ComputerName)
 
+
 ## 1.1.0 (2026-01-23)
 
 ### Added
@@ -98,6 +118,7 @@
 * Improved example documentation with more focused and practical use cases
 * Enhanced about_DNSServer.DebugLogParser help file to reflect current functionality
 * Enhanced verbose logging to provide more detailed progress information during processing
+
 
 ## 1.0.0 (2026-01-23)
 

@@ -4,7 +4,7 @@
     RootModule           = 'DNSServer.DebugLogParser.psm1'
 
     # Version number of this module.
-    ModuleVersion        = '1.2.1.0'
+    ModuleVersion        = '1.2.2.0'
 
     # Supported PSEditions
     CompatiblePSEditions = @('Desktop', 'Core')
@@ -101,13 +101,13 @@
             LicenseUri   = 'https://github.com/AndiBellstedt/DNSServer.DebugLogParser/blob/main/LICENSE'
 
             # A URL to the main website for this project.
-            ProjectUri   = 'https://github.com/AndiBellstedt/DNSServer.DebugLogParser'
+            ProjectUri   = 'https://dnsserverdebuglogparser.andibellstedt.com'
 
             # A URL to an icon representing this module.
             IconUri      = 'https://github.com/AndiBellstedt/DNSServer.DebugLogParser/raw/main/assets/icon/DNSServer.DebugLogParser_128x128.png'
 
             # ReleaseNotes of this module
-            ReleaseNotes = 'https://github.com/AndiBellstedt/DNSServer.DebugLogParser/blob/main/DNSServer.DebugLogParser/changelog.md'
+            ReleaseNotes = 'https://dnsserverdebuglogparser.andibellstedt.com/changelog'
 
             # Prerelease string of this module
             # Prerelease = ''
