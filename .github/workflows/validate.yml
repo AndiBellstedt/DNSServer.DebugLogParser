@@ -9,7 +9,6 @@ permissions:
 
 jobs:
   validate-ps51:
-    if: ${{ github.event_name == 'push' && github.ref != 'refs/heads/main' }}
     runs-on: windows-latest
 
     steps:
@@ -22,7 +21,6 @@ jobs:
         shell: powershell
 
   validate-ps7:
-    if: ${{ github.event_name == 'push' && github.ref != 'refs/heads/main' }}
     runs-on: windows-latest
 
     steps:
