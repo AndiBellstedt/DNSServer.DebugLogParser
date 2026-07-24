@@ -28,9 +28,9 @@
     .NOTES
         Internal function not exported from module.
 
-        Version:    1.0.0
+        Version:    1.0.1
         Author:     Andi Bellstedt
-        Date:       2026-01-23
+        Date:       2026-07-24
 
     #>
     [CmdletBinding()]
@@ -42,7 +42,14 @@
     )
 
     try {
-        $reader = [System.IO.StreamReader]::new($Path, [System.Text.Encoding]::UTF8, $true)
+        $readerStream = [System.IO.FileStream]::new(
+            $Path,
+            [System.IO.FileMode]::Open,
+            [System.IO.FileAccess]::Read,
+            [System.IO.FileShare]::ReadWrite,
+            65536
+        )
+        $reader = [System.IO.StreamReader]::new($readerStream, [System.Text.Encoding]::UTF8, $true, 65536)
 
         # Read first several lines to validate header structure
         $lines = @()
